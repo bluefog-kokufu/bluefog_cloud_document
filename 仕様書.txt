@@ -1,0 +1,6 @@
+・モック
+    https://bluefog-solution.com/bluefogcloud/bfc.html
+
+    ユーザーアカウント
+    メールアドレス：user@user.com
+    パスワード：password
