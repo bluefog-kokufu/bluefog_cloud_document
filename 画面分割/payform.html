@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bluefog Cloud - 支払通知書作成</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app" style="display:block">
+  <header class="topbar">
+    <div class="brand"><span class="mark"></span>Bluefog Cloud</div>
+    <div class="userbox">
+      <a class="manual-link" href="manual.html" target="_blank" title="ユーザー利用マニュアルを開く">📖 操作マニュアル</a>
+      <span id="userLabel">ユーザー企業 ご担当者(user@user.com)</span>
+      <button class="btn ghost small" onclick="logout()">ログアウト</button>
+    </div>
+  </header>
+  <div class="layout">
+    <nav class="side" id="sideNav">
+
+      <div class="clock"><div class="t" id="clockTime">11:54:18</div><div class="d" id="clockDate">2026年8月6日(木)</div></div>
+      <div class="navttl">MENU</div>
+      <a data-page="home" class="">ホーム</a>
+      <a data-page="customers" class="">顧客管理</a>
+      <a data-page="sales" class="">受注取引一覧</a>
+      <a data-page="purchases" class="">発注取引一覧(アップロード)</a>
+      <div class="navttl">支払通知書管理</div>
+      <a data-page="paynotices" class="">支払通知書一覧</a>
+      <a data-page="payform" class="active">支払通知書作成</a>
+      <div class="navttl">会計帳簿</div>
+      <a data-page="ledger">総勘定元帳</a>
+      <a data-page="bs">貸借対照表</a>
+      <a data-page="pl">損益計算書</a>
+      <a data-page="cf">キャッシュフロー計算書</a>
+      <div class="navttl">設定</div>
+      <a data-page="settings">会計・消費税設定</a>
+      <a data-page="profile">プロフィール</a>
+    
+    </nav>
+    <main id="page">
+
+    <div class="crumb"><a onclick="show('home')">ホーム</a> / 支払通知書作成</div>
+    <h2 class="pagettl">← 支払通知書作成</h2>
+    <div class="panel">
+      <div class="card">
+        <div class="secttl"><span class="n">1</span>取引先情報</div>
+        <div class="field"><label><span class="req">必須</span>取引先名</label>
+          <select id="nf_cust"><option value="">選択してください</option><option value="c1">test1株式会社</option><option value="c2">サンプル商事株式会社</option></select></div>
+      </div>
+      <div class="card">
+        <div class="secttl"><span class="n">2</span>事業者情報</div>
+        <div style="font-size:13px"><b>ユーザー企業株式会社</b><br><span class="muted">〒600-0000 京都府京都市中京区〇〇町1-2-3</span></div>
+      </div>
+      <div class="card">
+        <div class="secttl"><span class="n">3</span>入金口座情報 <button class="btn ghost small" onclick="bankEdit()">編集 預金口座情報</button></div>
+        <div style="font-size:13px">〇〇銀行 △△支店 普通 1234567 ユーザーキギヨウ(カ</div>
+      </div>
+      <div class="card">
+        <div class="secttl"><span class="n">4</span>基本情報</div>
+        <div class="grid2">
+          <div class="field"><label>支払日</label><input type="date" id="nf_date" value="2026-08-06"></div>
+          <div class="field"><label>支払通知書番号</label><input value="SC-20260806-001" readonly="" style="background:#eef2f8">
+            <a onclick="payRegenNo()" style="font-size:12px">🔄 番号を採番し直す</a></div>
+        </div>
+        <div class="field"><label>件名</label><input id="nf_title" value=""></div>
+      </div>
+      <div class="card">
+        <div class="secttl"><span class="n">5</span>明細情報</div>
+        <div class="right"><button class="btn ghost small" onclick="payItemAdd()">明細を新規登録</button></div>
+        <div style="overflow-x:auto">
+        <table class="sheet" id="payItems">
+          <tbody><tr><th>日付<span class="req" style="margin-left:4px">必須</span></th><th>品目<span class="req" style="margin-left:4px">必須</span></th><th>単価<span class="req" style="margin-left:4px">必須</span></th><th>単位</th><th>数量<span class="req" style="margin-left:4px">必須</span></th><th>消費税</th><th>金額</th><th></th></tr>
+          <tr><td colspan="8" class="muted" style="text-align:center;padding:14px">明細がありません。「明細を新規登録」で追加してください。</td></tr>
+        </tbody></table>
+        </div>
+        <table class="sheet" style="max-width:360px;margin-left:auto;margin-top:12px">
+          <tbody><tr><td>小計</td><td class="num" id="pf_sub" style="padding:4px 8px;width:160px">¥0</td></tr>
+          <tr><td>消費税</td><td class="num" id="pf_tax" style="padding:4px 8px">¥0</td></tr>
+          <tr><td class="total">合計(税込み)</td><td class="total num" id="pf_total" style="padding:4px 8px">¥0</td></tr>
+        </tbody></table>
+      </div>
+      <div class="formfoot">
+        <button class="btn ghost" onclick="payDraft=null;payEditId=null;show('paynotices')">キャンセル</button>
+        <button class="btn" onclick="noticeSave()">作成</button>
+      </div>
+    </div>
+    </main>
+  </div>
+</div>
+
+<div class="modal-bg" id="modalBg"><div class="modal" id="modalBox"></div></div>
+<div id="invoicePrintArea"></div>
+<script>window.INITIAL_PAGE="payform";sessionStorage.setItem("bf_login","1");</script>
+<script src="js/app.txt"></script>
+</body>
+</html>

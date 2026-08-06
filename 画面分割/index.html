@@ -3,44 +3,25 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Bluefog Cloud</title>
-<link rel="stylesheet" href="assets/common.css">
+<title>Bluefog Cloud - ホーム</title>
+<link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-
-<!-- ================= LOGIN ================= -->
-<div id="loginView">
-  <div class="login-card">
-    <h1>Bluefog Cloud</h1>
-    <div class="sub">ログイン画面</div>
-    <label>メールアドレス</label>
-    <input type="email" id="loginEmail" placeholder="user@user.com" autocomplete="username">
-    <label>パスワード</label>
-    <input type="password" id="loginPw" placeholder="パスワード" autocomplete="current-password">
-    <div class="err" id="loginErr"></div>
-    <button class="btn block" onclick="doLogin()">ログインする</button>
-    <div class="login-links">
-      <a onclick="alert('デモ版のため会員登録は省略されています。\nuser@user.com / password でログインしてください。')">会員登録はこちら</a>
-      <a onclick="alert('デモ版のためパスワード再発行は省略されています。')">パスワードを忘れた方</a>
-    </div>
-  </div>
-</div>
-
-<!-- ================= APP ================= -->
-<div id="app">
+<div id="app" style="display:block">
   <header class="topbar">
     <div class="brand"><span class="mark"></span>Bluefog Cloud</div>
     <div class="userbox">
       <a class="manual-link" href="manual.html" target="_blank" title="ユーザー利用マニュアルを開く">📖 操作マニュアル</a>
-      <span id="userLabel"></span>
+      <span id="userLabel">ユーザー企業 ご担当者(user@user.com)</span>
       <button class="btn ghost small" onclick="logout()">ログアウト</button>
     </div>
   </header>
   <div class="layout">
     <nav class="side" id="sideNav">
-      <div class="clock"><div class="t" id="clockTime">--:--:--</div><div class="d" id="clockDate"></div></div>
+
+      <div class="clock"><div class="t" id="clockTime">11:54:18</div><div class="d" id="clockDate">2026年8月6日(木)</div></div>
       <div class="navttl">MENU</div>
-      <a data-page="home">ホーム</a>
+      <a data-page="home" class="active">ホーム</a>
       <a data-page="customers">顧客管理</a>
       <a data-page="sales">受注取引一覧</a>
       <a data-page="purchases">発注取引一覧(アップロード)</a>
@@ -52,38 +33,49 @@
       <a data-page="bs">貸借対照表</a>
       <a data-page="pl">損益計算書</a>
       <a data-page="cf">キャッシュフロー計算書</a>
-      <div class="navttl">賃貸革命連携</div>
-      <a data-page="m_landlords">家主基本情報</a>
-      <a data-page="m_contractors">契約者情報</a>
-      <a data-page="m_repairers">修繕業者情報</a>
-      <a data-page="m_agents">仲介・管理業者情報</a>
-      <a data-page="m_insurers">保険会社情報</a>
       <div class="navttl">設定</div>
       <a data-page="settings">会計・消費税設定</a>
       <a data-page="profile">プロフィール</a>
+    
     </nav>
-    <main id="page"></main>
+    <main id="page">
+
+    <div class="crumb"><a onclick="show('home')">ホーム</a> / マイページ</div>
+    <h2 class="pagettl">マイページトップ</h2>
+    <div class="cards">
+      <div class="stat"><div class="t">登録顧客数</div><div class="v">2 社</div></div>
+      <div class="stat"><div class="t">今月の売上(税抜)</div><div class="v">¥0</div></div>
+      <div class="stat"><div class="t">未回収売掛金(税込)</div><div class="v">¥263,000</div></div>
+      <div class="stat"><div class="t">未払買掛金(税込)</div><div class="v">¥0</div></div>
+    </div>
+    <div class="panel">
+      <div class="card">
+        <b style="color:var(--navy)">お知らせ</b>
+        <ul class="notice" style="margin-top:8px">
+          <li><span class="d">2026.07.23</span><a href="manual.html" target="_blank"><b>操作マニュアルのお知らせ</b> — ユーザー利用マニュアルはこちら</a> <a href="manual.pdf" target="_blank" class="muted">(PDF版)</a></li>
+          <li><span class="d">2026.07.01</span>電子帳簿保存法対応:タイムスタンプ付与機能を更新しました。</li>
+          <li><span class="d">2026.06.15</span>インボイス(適格請求書)テンプレートを更新しました。</li>
+          <li><span class="d">2026.05.10</span>財務三表のCSV保存機能を追加しました。</li>
+        </ul>
+      </div>
+      <div class="card">
+        <b style="color:var(--navy)">クイックメニュー</b>
+        <div class="toolbar" style="margin-top:10px">
+          <button class="btn accent small" onclick="show('customers')">顧客管理</button>
+          <button class="btn accent small" onclick="show('sales')">取引管理(売上)</button>
+          <button class="btn accent small" onclick="show('purchases')">取引書類(仕入)</button>
+          <button class="btn accent small" onclick="show('ledger')">総勘定元帳</button>
+          <button class="btn accent small" onclick="show('bs')">財務三表</button>
+        </div>
+      </div>
+    </div>
+    </main>
   </div>
 </div>
 
 <div class="modal-bg" id="modalBg"><div class="modal" id="modalBox"></div></div>
 <div id="invoicePrintArea"></div>
-
-
-<script src="assets/common.js"></script>
-<script src="assets/financial-common.js"></script>
-<script src="screens/home.js"></script>
-<script src="screens/customers.js"></script>
-<script src="screens/sales.js"></script>
-<script src="screens/purchases.js"></script>
-<script src="screens/ledger.js"></script>
-<script src="screens/bs.js"></script>
-<script src="screens/pl.js"></script>
-<script src="screens/cf.js"></script>
-<script src="screens/settings.js"></script>
-<script src="screens/profile.js"></script>
-<script src="screens/paynotices.js"></script>
-<script src="screens/masters.js"></script>
-<script src="assets/init.js"></script>
+<script>window.INITIAL_PAGE="home";sessionStorage.setItem("bf_login","1");</script>
+<script src="js/app.txt"></script>
 </body>
 </html>

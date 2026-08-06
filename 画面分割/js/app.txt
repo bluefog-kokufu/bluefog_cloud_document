@@ -1,0 +1,1478 @@
+"use strict";
+/* ================= state ================= */
+const DEFAULT_DB = {
+  profile:{name:"ユーザー企業 ご担当者", email:"user@user.com", pw:"password"},
+  settings:{taxRate:10, rounding:"floor",
+    company:{name:"ユーザー企業株式会社", regNo:"T1234567890123", zip:"600-0000",
+      addr:"京都府京都市中京区〇〇町1-2-3", tel:"075-000-0000",
+      bank:"〇〇銀行 △△支店 普通 1234567 ユーザーキギヨウ(カ"}},
+  customers:[
+    {id:"c1", name:"test1株式会社", custType:"両方で使用する", zip:"100-0001", pref:"東京都", addr1:"千代田区1-1-1", addr2:"",
+      tel:"03-0000-0000", mobile:"", fax:"", url:"", person:"山田 太郎", email:"info@test1.co.jp", memo:""},
+    {id:"c2", name:"サンプル商事株式会社", custType:"受注取引管理", zip:"530-0001", pref:"大阪府", addr1:"大阪市北区2-2-2", addr2:"",
+      tel:"06-0000-0000", mobile:"", fax:"", url:"", person:"佐藤 花子", email:"sato@sample.co.jp", memo:""}
+  ],
+  sales:[
+    {id:"01h04cdeeq8pgxgswe8ab7qb83", date:"2026-05-11", custId:"c1", method:"現金", amount:55000, tax:5500, status:"請求済", invoiced:"", memo:"",
+     items:[{name:"商品売上", amount:55000, rate:10}]},
+    {id:"01h10apet73rdvnymkzqf3wq5f", date:"2026-05-21", custId:"c1", method:"現金", amount:185000, tax:17500, status:"請求済", invoiced:"2026-05-21 23:37", memo:"",
+     items:[{name:"保守サポート費用(月額)", amount:135000, rate:10},{name:"商品B", amount:50000, rate:8}]}
+  ],
+  purchases:[
+    {id:"5bzsfdnj2", date:"2026-05-21", custId:"c1", method:"現金", amount:88000, tax:8800, up:"2026-05-21", status:"支払い済", files:{}, memo:""},
+    {id:"8jfrhv3ms", date:"2026-05-16", custId:"c1", method:"普通預金", amount:46200, tax:4620, up:"2026-05-16", status:"支払い済", files:{}, memo:""},
+    {id:"85tagbt6s", date:"2026-05-15", custId:"c1", method:"現金", amount:27500, tax:2750, up:"2026-05-15", status:"支払い済", files:{}, memo:""}
+  ],
+  ledger:{date:"2026-05-02", rows:[
+    {no:"test1", year:"2026", m:"5", d:"11", drAcct:"売掛金", drAmt:55000, crAcct:"売上高", crAmt:55000, note:"商品売上", page:"1"}
+  ]},
+  bs:{date:"2026-08-16",
+    assets:[{name:"現金及び預金", v:3550000},{name:"売掛金", v:1450000},{name:"固定資産", v:5500000}],
+    liabs:[{name:"買掛金", v:980000},{name:"長期借入金", v:3200000}],
+    equity:[{name:"資本金", v:5000000},{name:"利益剰余金", v:1320000}]},
+  pl:{from:"2026-01-01", to:"2026-12-31",
+    rows:[{name:"売上高", type:"収益", v:12800000},{name:"売上原価", type:"費用", v:6400000},{name:"販売費及び一般管理費", type:"費用", v:3200000}]},
+  cf:{from:"2026-01-01", to:"2026-12-31", beg:2100000,
+    op:[{name:"税引前当期純利益", v:3450000}],
+    inv:[{name:"有形固定資産の取得による支出", v:-1200000}],
+    fin:[{name:"長期借入金の返済による支出", v:-800000}]},
+  paymentNotices:[
+    {id:"SC-20260701-001", custId:"c1", title:"6月分お支払いのご案内", payDate:"2026-07-31", created:"2026-07-01",
+     items:[{date:"2026-06-30", item:"業務委託料(6月分)", price:120000, unit:"式", qty:1, tax:"10%"},
+            {date:"2026-06-30", item:"交通費実費", price:3200, unit:"式", qty:1, tax:"非課税"}]}
+  ]
+};
+let db;
+const LS_KEY="bluefog_cloud_db_v1";
+function loadDb(){
+  try{const s=localStorage.getItem(LS_KEY); if(s){db=JSON.parse(s);}}catch(e){}
+  if(!db)db=JSON.parse(JSON.stringify(DEFAULT_DB));
+  /* migration for saved data from older versions */
+  if(!db.paymentNotices)db.paymentNotices=JSON.parse(JSON.stringify(DEFAULT_DB.paymentNotices));
+  delete db.masters;
+  if(!db.ledger)db.ledger=JSON.parse(JSON.stringify(DEFAULT_DB.ledger));
+  /* 旧バージョンの行データ(単式の総勘定元帳形式/中間版の仕訳帳形式)を仕訳帳形式に移行 */
+  (db.ledger.rows||[]).forEach(r=>{
+    if(r.year==null){
+      const y=(r.date||db.ledger.date||today()).slice(0,4);
+      r.year=y;r.m=r.m||(r.date?String(Number(r.date.slice(5,7))):"");r.d=r.d||(r.date?String(Number(r.date.slice(8,10))):"");
+      r.drAcct=r.drAcct||"";r.drAmt=r.drAmt||0;r.crAcct=r.crAcct||"";r.crAmt=r.crAmt||0;
+      delete r.date;
+    }
+    /* 旧・単式(acct/dr/cr)のみのデータは借方/貸方に振り分ける */
+    if(r.acct!=null){
+      if(Number(r.dr)>0&&!r.drAcct){r.drAcct=r.acct;r.drAmt=Number(r.dr);}
+      if(Number(r.cr)>0&&!r.crAcct){r.crAcct=r.acct;r.crAmt=Number(r.cr);}
+      delete r.acct;delete r.dr;delete r.cr;
+    }
+    r.no=r.no||"";r.note=r.note||"";r.page=r.page||"";
+  });
+  (db.sales||[]).forEach(s=>{
+    if(!s.items||!s.items.length) s.items=[{name:s.memo||"商品売上", amount:Number(s.amount)||0, rate:db.settings.taxRate}];
+  });
+  (db.paymentNotices||[]).forEach(n=>{
+    (n.items||[]).forEach(it=>{ if(it.tax==="外税")it.tax="10%"; });
+  });
+  (db.customers||[]).forEach(c=>{
+    if(c.custType==null){
+      c.custType="両方で使用する";
+      c.zip=c.zip||"";
+      c.pref=c.pref||"";
+      c.addr1=c.addr1||c.addr||"";
+      c.addr2=c.addr2||"";
+      c.mobile=c.mobile||"";
+      c.fax=c.fax||"";
+      c.url=c.url||"";
+    }
+  });
+}
+function save(){ try{localStorage.setItem(LS_KEY, JSON.stringify(db));}catch(e){} }
+
+/* ================= helpers ================= */
+const $=s=>document.querySelector(s);
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+function yen(n){n=Number(n)||0;return "¥"+n.toLocaleString("ja-JP");}
+function num(n){n=Number(n)||0;return n.toLocaleString("ja-JP");}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,8);}
+function today(){const d=new Date();return d.toISOString().slice(0,10);}
+function nowStamp(){const d=new Date();const p=x=>String(x).padStart(2,"0");return `${d.getFullYear()}.${p(d.getMonth()+1)}.${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;}
+function dotDate(s){return s?s.replaceAll("-","."):"";}
+function custName(id){const c=db.customers.find(c=>c.id===id);return c?c.name:"(削除済み)";}
+function custFullAddr(c){
+  if(!c)return "";
+  if(c.pref!=null||c.addr1!=null)return `${c.pref||""}${c.addr1||""}${c.addr2||""}`;
+  return c.addr||"";
+}
+const PREFS=["北海道","青森県","岩手県","宮城県","秋田県","山形県","福島県","茨城県","栃木県","群馬県","埼玉県","千葉県","東京都","神奈川県",
+  "新潟県","富山県","石川県","福井県","山梨県","長野県","岐阜県","静岡県","愛知県","三重県","滋賀県","京都府","大阪府","兵庫県","奈良県","和歌山県",
+  "鳥取県","島根県","岡山県","広島県","山口県","徳島県","香川県","愛媛県","高知県","福岡県","佐賀県","長崎県","熊本県","大分県","宮崎県","鹿児島県","沖縄県"];
+const ZIP_LOOKUP={
+  "1000001":{pref:"東京都",addr1:"千代田区千代田"},
+  "5300001":{pref:"大阪府",addr1:"大阪市北区梅田"},
+  "6008216":{pref:"京都府",addr1:"京都市下京区東塩小路町"},
+  "0600001":{pref:"北海道",addr1:"札幌市中央区北一条西"},
+  "4600008":{pref:"愛知県",addr1:"名古屋市中区栄"},
+  "8100001":{pref:"福岡県",addr1:"福岡市中央区天神"}
+};
+async function custZipLookup(){
+  const zipEl=$("#cf_zip"), btn=$("#cf_zipbtn");
+  const zip=(zipEl.value||"").replace(/[^0-9]/g,"");
+  if(zip.length!==7){alert("郵便番号は7桁の数字で入力してください(例: 1000001)。");return;}
+  const hit=ZIP_LOOKUP[zip];
+  const origLabel=btn.textContent;
+  btn.textContent="検索中…";btn.disabled=true;
+  try{
+    const res=await fetch(`https://zipcloud.ibsnet.co.jp/api/search?zipcode=${zip}`);
+    if(!res.ok)throw new Error("http "+res.status);
+    const data=await res.json();
+    if(data.status===200 && data.results && data.results.length){
+      const r=data.results[0];
+      $("#cf_pref").value=r.address1;
+      $("#cf_addr1").value=`${r.address2}${r.address3}`;
+      zipEl.value=zip.slice(0,3)+"-"+zip.slice(3);
+    }else if(hit){
+      $("#cf_pref").value=hit.pref;$("#cf_addr1").value=hit.addr1;
+    }else{
+      alert("該当する住所が見つかりませんでした。郵便番号をご確認のうえ、都道府県・住所は直接入力してください。");
+    }
+  }catch(e){
+    if(hit){
+      $("#cf_pref").value=hit.pref;$("#cf_addr1").value=hit.addr1;
+      alert("住所検索API(zipcloud)に接続できなかったため、内蔵データから入力しました。");
+    }else{
+      alert("住所検索に失敗しました。ネットワーク接続をご確認いただくか、都道府県・住所は直接入力してください。");
+    }
+  }finally{
+    btn.textContent=origLabel;btn.disabled=false;
+  }
+}
+function calcTaxAt(amount, rate){
+  const r=Number(rate)/100, raw=(Number(amount)||0)*r, m=db.settings.rounding;
+  return m==="ceil"?Math.ceil(raw):m==="round"?Math.round(raw):Math.floor(raw);
+}
+function calcTax(amount){ return calcTaxAt(amount, db.settings.taxRate); }
+function addDays(dateStr, n){
+  const d=new Date(dateStr+"T00:00:00"); d.setDate(d.getDate()+n);
+  const p=x=>String(x).padStart(2,"0");
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+}
+function csvDownload(filename, rows){
+  const csv=rows.map(r=>r.map(c=>{c=String(c==null?"":c);return /[",\n]/.test(c)?'"'+c.replaceAll('"','""')+'"':c;}).join(",")).join("\r\n");
+  const blob=new Blob(["﻿"+csv],{type:"text/csv"});
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=filename;a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),3000);
+}
+/* ---- CSV共通UI (エクスポート/インポート/テンプレート) ---- */
+function csvBarHtml(prefix){
+  return `<div class="csvbar">
+    <button class="btn yellow small" onclick="${prefix}CsvExport()">⬇ データのエクスポート(CSV)</button>
+    <button class="btn blue small" onclick="$('#${prefix}CsvFile').click()">⬆ CSVインポート</button>
+    <button class="btn green small" onclick="${prefix}CsvTemplate()">⬇ CSVテンプレート</button>
+    <input type="file" id="${prefix}CsvFile" accept=".csv" style="display:none">
+  </div>`;
+}
+function bindCsvImport(prefix, handler){
+  $("#"+prefix+"CsvFile").addEventListener("change",e=>{
+    const f=e.target.files[0];if(!f)return;
+    const r=new FileReader();
+    r.onload=()=>{
+      const rows=parseCsv(r.result).filter(x=>x.length&&x.join("").trim());
+      handler(rows);
+    };
+    r.readAsText(f,"UTF-8");
+  });
+}
+function custIdByName(name){
+  name=String(name||"").trim();
+  if(!name)return "";
+  let c=db.customers.find(x=>x.name===name);
+  if(!c){c={id:"c"+uid(),name,person:"",email:"",tel:"",addr:"",site:"月末締め翌月末払い",regNo:"",memo:"CSVインポートで自動登録"};db.customers.push(c);}
+  return c.id;
+}
+function openModal(html){$("#modalBox").innerHTML=html;$("#modalBg").classList.add("open");}
+function closeModal(){$("#modalBg").classList.remove("open");}
+$("#modalBg") && document.addEventListener("click",e=>{if(e.target.id==="modalBg")closeModal();});
+
+/* ================= auth ================= */
+function doLogin(){
+  const em=$("#loginEmail").value.trim(), pw=$("#loginPw").value;
+  if(em===db.profile.email && pw===db.profile.pw){
+    sessionStorage.setItem("bf_login","1");
+    showApp();
+  }else{
+    $("#loginErr").textContent="メールアドレスまたはパスワードが正しくありません。";
+  }
+}
+function logout(){sessionStorage.removeItem("bf_login");location.href="login.html";}
+function showApp(){
+  $("#loginView").style.display="none";$("#app").style.display="block";
+  $("#userLabel").textContent=db.profile.name+"("+db.profile.email+")";
+  show(window.INITIAL_PAGE||"home");
+}
+
+/* ================= router ================= */
+const PAGES={};
+let curPage="home";
+function show(page){
+  curPage=page;
+  document.querySelectorAll("#sideNav a").forEach(a=>a.classList.toggle("active",a.dataset.page===page));
+  PAGES[page]();
+  window.scrollTo(0,0);
+}
+/* re-render the current page in place (e.g. after adding/removing a row or regenerating a value)
+   without jumping the scroll position back to the top */
+function refresh(){
+  const y=window.scrollY;
+  PAGES[curPage]();
+  window.scrollTo(0,y);
+}
+document.querySelectorAll("#sideNav a").forEach(a=>a.onclick=()=>show(a.dataset.page));
+function crumb(label){return `<div class="crumb"><a onclick="show('home')">ホーム</a> / ${label}</div>`;}
+
+/* ================= home ================= */
+PAGES.home=function(){
+  const ar=db.sales.filter(s=>s.status!=="入金済"&&s.status!=="回収不能").reduce((t,s)=>t+Number(s.amount)+Number(s.tax),0);
+  const ap=db.purchases.filter(p=>p.status!=="支払い済").reduce((t,p)=>t+Number(p.amount)+Number(p.tax),0);
+  const month=today().slice(0,7);
+  const ms=db.sales.filter(s=>(s.date||"").startsWith(month)).reduce((t,s)=>t+Number(s.amount),0);
+  $("#page").innerHTML=`
+    ${crumb("マイページ")}
+    <h2 class="pagettl">マイページトップ</h2>
+    <div class="cards">
+      <div class="stat"><div class="t">登録顧客数</div><div class="v">${db.customers.length} 社</div></div>
+      <div class="stat"><div class="t">今月の売上(税抜)</div><div class="v">${yen(ms)}</div></div>
+      <div class="stat"><div class="t">未回収売掛金(税込)</div><div class="v">${yen(ar)}</div></div>
+      <div class="stat"><div class="t">未払買掛金(税込)</div><div class="v">${yen(ap)}</div></div>
+    </div>
+    <div class="panel">
+      <div class="card">
+        <b style="color:var(--navy)">お知らせ</b>
+        <ul class="notice" style="margin-top:8px">
+          <li><span class="d">2026.07.23</span><a href="manual.html" target="_blank"><b>操作マニュアルのお知らせ</b> — ユーザー利用マニュアルはこちら</a> <a href="manual.pdf" target="_blank" class="muted">(PDF版)</a></li>
+          <li><span class="d">2026.07.01</span>電子帳簿保存法対応:タイムスタンプ付与機能を更新しました。</li>
+          <li><span class="d">2026.06.15</span>インボイス(適格請求書)テンプレートを更新しました。</li>
+          <li><span class="d">2026.05.10</span>財務三表のCSV保存機能を追加しました。</li>
+        </ul>
+      </div>
+      <div class="card">
+        <b style="color:var(--navy)">クイックメニュー</b>
+        <div class="toolbar" style="margin-top:10px">
+          <button class="btn accent small" onclick="show('customers')">顧客管理</button>
+          <button class="btn accent small" onclick="show('sales')">取引管理(売上)</button>
+          <button class="btn accent small" onclick="show('purchases')">取引書類(仕入)</button>
+          <button class="btn accent small" onclick="show('ledger')">総勘定元帳</button>
+          <button class="btn accent small" onclick="show('bs')">財務三表</button>
+        </div>
+      </div>
+    </div>`;
+};
+
+/* ================= customers ================= */
+let custQ="";
+PAGES.customers=function(){
+  const list=db.customers.filter(c=>!custQ||[c.name,c.person,c.email,c.tel].join(" ").includes(custQ));
+  $("#page").innerHTML=`
+    ${crumb("顧客一覧")}
+    <h2 class="pagettl">顧客一覧</h2>
+    <div class="panel">
+      <div class="toolbar">
+        <input type="text" id="custQ" placeholder="会社名・担当者・メール等で検索" value="${esc(custQ)}">
+        <button class="btn small" onclick="custQ=$('#custQ').value;show('customers')">検索</button>
+        <span style="flex:1"></span>
+        <button class="btn ghost small" onclick="custForm()">顧客作成</button>
+      </div>
+      ${csvBarHtml("cust")}
+      <div class="card" style="overflow-x:auto">
+        <table class="list">
+          <tr><th>No</th><th>会社名</th><th>電話番号</th><th>担当者名</th><th>メールアドレス</th><th>操作</th></tr>
+          ${list.map(c=>`<tr>
+            <td class="muted" style="max-width:170px;overflow:hidden;text-overflow:ellipsis">${esc(c.id)}</td>
+            <td><a onclick="custForm('${c.id}')">${esc(c.name)}</a></td>
+            <td>${esc(c.tel)}</td><td>${esc(c.person)}</td><td>${esc(c.email)}</td>
+            <td><button class="icon-btn" title="編集" onclick="custForm('${c.id}')">✎</button>
+                <button class="icon-btn" title="削除" onclick="custDel('${c.id}')">🗑</button></td>
+          </tr>`).join("")||`<tr><td colspan="6" class="muted">該当する顧客がありません。</td></tr>`}
+        </table>
+        <div class="pager"><button>&lt;</button><button class="cur">1</button><button>&gt;</button></div>
+      </div>
+    </div>`;
+  $("#custQ").addEventListener("keydown",e=>{if(e.key==="Enter"){custQ=e.target.value;show("customers");}});
+  bindCsvImport("cust",custCsvImport);
+};
+const CUST_CSV_HEAD=["会社名","顧客タイプ","郵便番号","都道府県","住所(市区町村・丁番地)","住所2(建物名・部屋番号)","電話番号","携帯電話番号","ファックス番号","ウェブサイトURL","担当者名","メールアドレス","メモ"];
+function custCsvExport(){
+  csvDownload("顧客一覧.csv",[CUST_CSV_HEAD,
+    ...db.customers.map(c=>[c.name,c.custType,c.zip,c.pref,c.addr1,c.addr2,c.tel,c.mobile,c.fax,c.url,c.person,c.email,c.memo])]);
+}
+function custCsvTemplate(){
+  csvDownload("顧客一覧_テンプレート.csv",[CUST_CSV_HEAD,
+    ["サンプル株式会社","両方で使用する","100-0001","東京都","千代田区1-1-1","","03-0000-0000","090-0000-0000","03-0000-0001","https://example.com","山田 太郎","info@sample.co.jp",""]]);
+}
+function custCsvImport(rows){
+  let added=0,updated=0;
+  rows.forEach((x,i)=>{
+    if(i===0&&x[0]===CUST_CSV_HEAD[0])return;
+    const name=String(x[0]||"").trim();
+    if(!name)return;
+    const data={name,custType:["受注取引管理","発注取引管理","両方で使用する"].includes(x[1])?x[1]:"両方で使用する",
+      zip:x[2]||"",pref:x[3]||"",addr1:x[4]||"",addr2:x[5]||"",tel:x[6]||"",mobile:x[7]||"",fax:x[8]||"",url:x[9]||"",
+      person:x[10]||"",email:x[11]||"",memo:x[12]||""};
+    const ex=db.customers.find(c=>c.name===name);
+    if(ex){Object.assign(ex,data);updated++;}
+    else{data.id="c"+uid();db.customers.push(data);added++;}
+  });
+  save();alert(`インポート完了: 新規${added}件 / 更新${updated}件`);show("customers");
+}
+function custForm(id, afterSave){
+  const c=id?db.customers.find(x=>x.id===id):{name:"",custType:"受注取引管理",zip:"",pref:"",addr1:"",addr2:"",
+    tel:"",mobile:"",fax:"",url:"",person:"",email:"",memo:""};
+  openModal(`
+    <h3>${id?"顧客編集":"顧客作成"}</h3>
+    <div class="field"><label><span class="req">必須</span>会社名</label><input id="cf_name" value="${esc(c.name)}"></div>
+    <div class="field"><label><span class="req">必須</span>顧客タイプ</label>
+      <div style="display:flex;gap:18px;align-items:center;padding:8px 0">
+        ${["受注取引管理","発注取引管理","両方で使用する"].map(t=>`
+          <label style="display:flex;align-items:center;gap:6px;font-weight:400;font-size:13px;color:var(--text)">
+            <input type="radio" name="cf_type" value="${t}" ${c.custType===t?"checked":""} style="width:auto"> ${t}
+          </label>`).join("")}
+      </div>
+    </div>
+    <div class="field"><label>郵便番号</label>
+      <div style="display:flex;gap:8px">
+        <input id="cf_zip" value="${esc(c.zip)}" placeholder="1000001" style="max-width:200px">
+        <button type="button" id="cf_zipbtn" class="btn ghost small" onclick="custZipLookup()" style="flex-shrink:0">自動入力アドレス</button>
+      </div>
+    </div>
+    <div class="field"><label>都道府県</label>
+      <select id="cf_pref"><option value="">都道府県を選択</option>${PREFS.map(p=>`<option ${c.pref===p?"selected":""}>${p}</option>`).join("")}</select></div>
+    <div class="field"><label>住所(市区町村・丁番地)</label><input id="cf_addr1" value="${esc(c.addr1)}"></div>
+    <div class="field"><label>住所2(建物名・部屋番号)</label><input id="cf_addr2" value="${esc(c.addr2)}"></div>
+    <div class="field"><label>電話番号</label><input id="cf_tel" value="${esc(c.tel)}"></div>
+    <div class="field"><label>携帯電話番号</label><input id="cf_mobile" value="${esc(c.mobile)}"></div>
+    <div class="field"><label>ファックス番号</label><input id="cf_fax" value="${esc(c.fax)}"></div>
+    <div class="field"><label>ウェブサイトURL</label><input id="cf_url" value="${esc(c.url)}"></div>
+    <div class="field"><label>担当者名</label><input id="cf_person" value="${esc(c.person)}"></div>
+    <div class="field"><label>メールアドレス</label><input id="cf_email" value="${esc(c.email)}"></div>
+    <div class="field"><label>メモ</label><textarea id="cf_memo" rows="2">${esc(c.memo)}</textarea></div>
+    <div class="formfoot">
+      <button class="btn ghost" onclick="closeModal()">キャンセル</button>
+      <button class="btn" onclick="custSave('${id||""}',${afterSave?"true":"false"})">${id?"更新":"作成"}</button>
+    </div>`);
+}
+function custSave(id, reopenTx){
+  const name=$("#cf_name").value.trim();
+  if(!name){alert("会社名は必須です。");return;}
+  const typeEl=document.querySelector('input[name="cf_type"]:checked');
+  const data={name,custType:typeEl?typeEl.value:"受注取引管理",zip:$("#cf_zip").value,pref:$("#cf_pref").value,
+    addr1:$("#cf_addr1").value,addr2:$("#cf_addr2").value,tel:$("#cf_tel").value,mobile:$("#cf_mobile").value,
+    fax:$("#cf_fax").value,url:$("#cf_url").value,person:$("#cf_person").value,email:$("#cf_email").value,memo:$("#cf_memo").value};
+  if(id){Object.assign(db.customers.find(c=>c.id===id),data);}
+  else{data.id="c"+uid();db.customers.push(data);}
+  save();closeModal();
+  if(reopenTx==="true"||reopenTx===true){/* return to tx form */}
+  const active=document.querySelector("#sideNav a.active");
+  show(active?active.dataset.page:"customers");
+}
+function custDel(id){
+  if(!confirm("この顧客を削除しますか?関連する取引の表示名は「(削除済み)」になります。"))return;
+  db.customers=db.customers.filter(c=>c.id!==id);save();show("customers");
+}
+
+/* ================= sales (受注管理) ================= */
+let saleF={q:"",method:"",status:"",from:"",to:""};
+PAGES.sales=function(){
+  const list=db.sales.filter(s=>{
+    if(saleF.method&&s.method!==saleF.method)return false;
+    if(saleF.status&&s.status!==saleF.status)return false;
+    if(saleF.from&&s.date<saleF.from)return false;
+    if(saleF.to&&s.date>saleF.to)return false;
+    if(saleF.q&&![s.id,custName(s.custId),s.memo].join(" ").includes(saleF.q))return false;
+    return true;
+  }).sort((a,b)=>(b.date||"").localeCompare(a.date||""));
+  $("#page").innerHTML=`
+    ${crumb("取引一覧")}
+    <h2 class="pagettl">取引一覧(売上)</h2>
+    <div class="panel">
+      <div class="toolbar">
+        <input type="text" id="sQ" placeholder="No・取引先名で検索" value="${esc(saleF.q)}">
+        <input type="date" id="sF" title="作成日:開始日" value="${esc(saleF.from)}" style="width:150px">
+        <input type="date" id="sT" title="作成日:終了日" value="${esc(saleF.to)}" style="width:150px">
+        <select id="sM"><option value="">入金方法</option>${["現金","普通預金","当座預金","クレジット"].map(m=>`<option ${saleF.method===m?"selected":""}>${m}</option>`).join("")}</select>
+        <select id="sS"><option value="">ステータス</option>${["未請求","請求済","入金済","回収不能"].map(m=>`<option ${saleF.status===m?"selected":""}>${m}</option>`).join("")}</select>
+        <button class="btn small" onclick="saleF={q:$('#sQ').value,method:$('#sM').value,status:$('#sS').value,from:$('#sF').value,to:$('#sT').value};show('sales')">絞り込み</button>
+        <span style="flex:1"></span>
+        <button class="btn ghost small" onclick="saleForm()">取引作成</button>
+      </div>
+      ${csvBarHtml("sale")}
+      <div class="card" style="overflow-x:auto">
+        <table class="list">
+          <tr><th>No</th><th>作成日</th><th>取引先名</th><th>入金方法</th><th class="num">請求金額</th><th class="num">税額</th><th>請求書</th><th>作成日時/履歴</th><th>ステータス</th><th>操作</th></tr>
+          ${list.map(s=>`<tr>
+            <td class="muted" style="max-width:170px;overflow:hidden;text-overflow:ellipsis">${esc(s.id)}</td>
+            <td>${dotDate(s.date)}</td>
+            <td>${esc(custName(s.custId))}</td>
+            <td>${esc(s.method)}</td>
+            <td class="num">${yen(s.amount)}</td>
+            <td class="num">${yen(s.tax)}</td>
+            <td>${s.invoiced?`<a onclick="invoiceView('${s.id}')">⬇ 表示</a>`:`<a onclick="invoiceView('${s.id}')">請求書作成</a>`}</td>
+            <td class="muted">${esc(s.invoiced)}</td>
+            <td><span class="badge ${s.status==="入金済"?"paid":s.status==="請求済"?"warn":s.status==="回収不能"?"bad":"gray"}">${s.status}</span></td>
+            <td><button class="icon-btn" title="編集" onclick="saleForm('${s.id}')">✎</button>
+                <button class="icon-btn" title="削除" onclick="saleDel('${s.id}')">🗑</button></td>
+          </tr>`).join("")||`<tr><td colspan="10" class="muted">取引がありません。</td></tr>`}
+        </table>
+        <div class="pager"><button>&lt;</button><button class="cur">1</button><button>&gt;</button></div>
+      </div>
+      <div class="muted">CSVインポート: 「取引No」列が同じ行は1つの取引の明細としてまとめて登録されます。取引先名が未登録の場合は顧客情報も自動作成されます。</div>
+    </div>`;
+  bindCsvImport("sale",saleCsvImport);
+};
+const SALE_CSV_HEAD=["取引No","作成日","取引先名","入金方法","品目・内容","税抜金額","税率(%)","ステータス","備考"];
+function saleCsvExport(){
+  const rows=[];
+  db.sales.forEach(s=>{
+    invoiceItems(s).forEach(it=>{
+      rows.push([s.id,s.date,custName(s.custId),s.method,it.name,it.amount,it.rate,s.status,s.memo]);
+    });
+  });
+  csvDownload("受注取引一覧.csv",[SALE_CSV_HEAD,...rows]);
+}
+function saleCsvTemplate(){
+  csvDownload("受注取引一覧_テンプレート.csv",[SALE_CSV_HEAD,
+    ["T001","2026-08-01","サンプル株式会社","現金","保守サポート費用(月額)","135000","10","未請求",""],
+    ["T001","2026-08-01","サンプル株式会社","現金","商品B","50000","8","未請求",""],
+    ["T002","2026-08-02","サンプル株式会社","普通預金","商品売上","55000","10","未請求",""]]);
+}
+function saleCsvImport(rows){
+  const groups={};let order=[];
+  rows.forEach((x,i)=>{
+    if(i===0&&x[0]===SALE_CSV_HEAD[0])return;
+    if(!String(x[2]||"").trim()||!String(x[4]||"").trim())return;
+    const key=String(x[0]||"").trim()||("row"+i);
+    if(!groups[key]){groups[key]={date:x[1]||today(),custName:x[2],method:x[3]||"現金",status:["未請求","請求済","入金済","回収不能"].includes(x[7])?x[7]:"未請求",memo:x[8]||"",items:[]};order.push(key);}
+    const rate=[10,8,0].includes(Number(x[6]))?Number(x[6]):db.settings.taxRate;
+    groups[key].items.push({name:x[4],amount:Number(x[5])||0,rate});
+  });
+  let added=0;
+  order.forEach(k=>{
+    const g=groups[k];
+    const t=saleTotals(g.items);
+    db.sales.push({id:uid(),date:g.date,custId:custIdByName(g.custName),method:g.method,status:g.status,memo:g.memo,items:g.items,amount:t.sub,tax:t.tax,invoiced:""});
+    added++;
+  });
+  save();alert(`インポート完了: ${added}件の取引を登録しました`);show("sales");
+}
+function custOptions(sel){
+  return `<option value="">選択してください</option>`+db.customers.map(c=>`<option value="${c.id}" ${sel===c.id?"selected":""}>${esc(c.name)}</option>`).join("");
+}
+const RATE_LABEL={10:"10%対象",8:"軽減8%対象",0:"対象外(非課税)"};
+let saleDraft=null, saleFormId="";
+/* 適格請求書のルール: 端数処理(切り捨て/四捨五入/切り上げ)は「税率ごとに1回」。
+   明細行ごとに計算して合算すると税額がずれるため、同一税率の税抜金額を
+   先に合算してから消費税額を1回だけ算出する。 */
+function groupByRate(items){
+  const g={};
+  (items||[]).forEach(it=>{
+    const r=Number(it.rate)||0;
+    if(!g[r]) g[r]={rate:r, sub:0};
+    g[r].sub+=Number(it.amount)||0;
+  });
+  Object.values(g).forEach(v=>{ v.tax=calcTaxAt(v.sub, v.rate); });
+  return g;
+}
+function saleTotals(items){
+  const g=groupByRate(items);
+  let sub=0,tax=0;
+  Object.values(g).forEach(v=>{sub+=v.sub;tax+=v.tax;});
+  return {sub,tax,total:sub+tax,groups:g};
+}
+function saleForm(id){
+  saleFormId=id||"";
+  if(id){
+    const src=db.sales.find(x=>x.id===id);
+    saleDraft=JSON.parse(JSON.stringify(src));
+    if(!saleDraft.items||!saleDraft.items.length) saleDraft.items=[{name:src.memo||"商品売上",amount:src.amount,rate:db.settings.taxRate}];
+  }else{
+    saleDraft={date:today(),custId:"",method:"",status:"未請求",memo:"",items:[{name:"",amount:"",rate:db.settings.taxRate}]};
+  }
+  renderSaleForm(saleFormId);
+}
+function renderSaleForm(id){
+  const s=saleDraft, t=saleTotals(s.items);
+  openModal(`
+    <h3>${id?"取引編集":"取引作成"}(売上)・インボイス対応請求書</h3>
+    <div class="field"><label><span class="req">必須</span>取引先名</label>
+      <select id="tf_cust">${custOptions(s.custId)}</select>
+      <div style="margin-top:6px"><button class="btn ghost small" onclick="custForm(null,true)">顧客情報を新規登録</button></div>
+    </div>
+    <div class="grid2">
+      <div class="field"><label><span class="req">必須</span>作成日</label><input type="date" id="tf_date" value="${esc(s.date)}"></div>
+      <div class="field"><label><span class="req">必須</span>入金方法</label>
+        <select id="tf_method"><option value="">選択してください</option>${["現金","普通預金","当座預金","クレジット"].map(m=>`<option ${s.method===m?"selected":""}>${m}</option>`).join("")}</select></div>
+      <div class="field"><label><span class="req">必須</span>ステータス</label>
+        <select id="tf_status">${["未請求","請求済","入金済","回収不能"].map(m=>`<option ${s.status===m?"selected":""}>${m}</option>`).join("")}</select></div>
+      <div class="field"><label>備考(請求書には表示されません)</label><input id="tf_memo" value="${esc(s.memo)}"></div>
+    </div>
+    <div class="field" style="max-width:none">
+      <label>明細(品目ごとに税率を設定できます・軽減税率8%対応)</label>
+      <div class="right" style="margin:0 0 8px"><button class="btn ghost small" onclick="saleItemAdd()">+ 明細行を追加</button></div>
+      <div style="overflow-x:auto">
+      <table class="sheet" id="tfItems">
+        <tr><th>品目・内容</th><th style="width:130px">税抜金額</th><th style="width:110px">税率</th><th style="width:110px">消費税額</th><th style="width:40px"></th></tr>
+        ${s.items.map((it,i)=>`<tr>
+          <td><input data-i="${i}" data-k="name" value="${esc(it.name)}" placeholder="品目・内容"></td>
+          <td><input data-i="${i}" data-k="amount" type="number" value="${it.amount}" style="text-align:right"></td>
+          <td><select data-i="${i}" data-k="rate">
+            <option value="10" ${String(it.rate)==="10"?"selected":""}>10%(標準)</option>
+            <option value="8" ${String(it.rate)==="8"?"selected":""}>8%(軽減)</option>
+            <option value="0" ${String(it.rate)==="0"?"selected":""}>対象外(0%)</option>
+          </select></td>
+          <td class="num" style="padding:4px 8px">${yen(calcTaxAt(it.amount,it.rate))}</td>
+          <td><button class="icon-btn" onclick="saleItemDel(${i})">🗑</button></td>
+        </tr>`).join("")}
+      </table>
+      </div>
+      <table class="sheet" style="max-width:340px;margin-left:auto;margin-top:10px">
+        <tr><td>小計(税抜)</td><td class="num" style="padding:4px 8px;width:150px">${yen(t.sub)}</td></tr>
+        <tr><td>消費税</td><td class="num" style="padding:4px 8px">${yen(t.tax)}</td></tr>
+        <tr><td class="total">請求金額(税込)</td><td class="total num" style="padding:4px 8px">${yen(t.total)}</td></tr>
+      </table>
+    </div>
+    <div class="formfoot">
+      <button class="btn ghost" onclick="saleDraft=null;closeModal()">キャンセル</button>
+      <button class="btn" onclick="saleSave('${id||""}')">${id?"更新":"作成"}</button>
+    </div>`);
+  $("#tfItems").addEventListener("change",e=>{
+    const i=e.target.dataset.i;if(i==null)return;
+    const k=e.target.dataset.k;
+    saleDraft.items[i][k]=k==="amount"?Number(e.target.value)||0:(k==="rate"?Number(e.target.value):e.target.value);
+    collectSaleHeader();
+    renderSaleForm(saleFormId);
+  });
+}
+function collectSaleHeader(){
+  if(!$("#tf_cust"))return;
+  saleDraft.custId=$("#tf_cust").value;saleDraft.date=$("#tf_date").value;saleDraft.method=$("#tf_method").value;
+  saleDraft.status=$("#tf_status").value;saleDraft.memo=$("#tf_memo").value;
+}
+function saleItemAdd(){collectSaleHeader();saleDraft.items.push({name:"",amount:"",rate:db.settings.taxRate});renderSaleForm(saleFormId);}
+function saleItemDel(i){collectSaleHeader();if(saleDraft.items.length<=1){alert("明細は1件以上必要です。");return;}saleDraft.items.splice(i,1);renderSaleForm(saleFormId);}
+function saleSave(id){
+  collectSaleHeader();
+  const s=saleDraft;
+  if(!s.custId||!s.date||!s.method){alert("必須項目を入力してください。");return;}
+  for(const it of s.items){if(!it.name||!it.amount){alert("明細の品目・内容と税抜金額を入力してください。");return;}}
+  const t=saleTotals(s.items);
+  const data={custId:s.custId,date:s.date,method:s.method,status:s.status,memo:s.memo,items:s.items,amount:t.sub,tax:t.tax};
+  if(id){Object.assign(db.sales.find(x=>x.id===id),data);}
+  else{data.id=uid();data.invoiced="";db.sales.push(data);}
+  saveDraftClear();save();closeModal();show("sales");
+}
+function saveDraftClear(){saleDraft=null;saleFormId="";}
+function saleDel(id){if(confirm("この取引を削除しますか?")){db.sales=db.sales.filter(s=>s.id!==id);save();show("sales");}}
+function roundLabel(){return {floor:"切り捨て",round:"四捨五入",ceil:"切り上げ"}[db.settings.rounding];}
+
+/* ================= invoice (適格請求書・インボイス対応) ================= */
+function invoiceItems(s){
+  return (s.items&&s.items.length)?s.items:[{name:s.memo||"商品売上",amount:s.amount,rate:db.settings.taxRate}];
+}
+function invoiceHtml(s){
+  const c=db.customers.find(x=>x.id===s.custId)||{name:"(削除済み)",addr:"",regNo:"",site:""};
+  const co=db.settings.company, items=invoiceItems(s);
+  const t=saleTotals(items);
+  const dueDate=addDays(s.date,30);
+  // per-rate breakdown, in the order 10% → 8% → 0%
+  const rates=[10,8,0].filter(r=>items.some(it=>Number(it.rate)===r));
+  const hasReduced=items.some(it=>Number(it.rate)===8);
+  return `
+  <div class="invoice">
+    <h1>請 求 書</h1>
+    <div class="inv-head">
+      <div>
+        <div style="font-size:15px;font-weight:700;border-bottom:1px solid #333;padding-bottom:4px;margin-bottom:6px">${esc(c.name)} 様</div>
+        <div style="margin-top:6px">下記の通りご請求申し上げます。</div>
+      </div>
+      <div style="text-align:right;font-size:12px">
+        <div>No. ${esc(s.id)}</div>
+        <div>発行日: ${esc(s.date)}</div>
+      </div>
+    </div>
+    <div class="inv-head" style="margin-top:2px">
+      <div class="muted" style="font-size:12px">${esc(custFullAddr(c))}</div>
+      <div style="text-align:right;font-size:12px">
+        <div style="font-weight:700;font-size:14px">${esc(co.name)}</div>
+        <div>登録番号: ${esc(co.regNo)}</div>
+        <div>${esc(co.zip)} ${esc(co.addr)}</div>
+        <div>TEL: ${esc(co.tel)}</div>
+      </div>
+    </div>
+    <table class="inv">
+      <tr><th style="width:44%">品目・内容</th><th class="num">税抜金額</th><th style="width:70px;text-align:center">税率</th><th class="num">消費税額</th><th class="num">税込金額</th></tr>
+      ${items.map(it=>{
+        const rate=Number(it.rate), tx=calcTaxAt(it.amount,rate), tot=Number(it.amount)+tx;
+        const label=rate===8?"8%":rate===0?"-":"10%";
+        return `<tr><td>${esc(it.name)}${rate===8?"※":""}</td><td class="num">${yen(it.amount)}</td><td style="text-align:center">${label}</td><td class="num">${yen(tx)}</td><td class="num">${yen(tot)}</td></tr>`;
+      }).join("")}
+      <tr class="inv-total-row"><td colspan="3" style="text-align:right">合計</td><td class="num">${yen(t.tax)}</td><td class="num">${yen(t.total)}</td></tr>
+    </table>
+    <div class="inv-breakdown">
+      <table>
+        ${rates.map(r=>{
+          const g=t.groups[r];
+          return `<tr><td>${esc(RATE_LABEL[r])}</td><td class="num">${yen(g.sub)}</td><td>消費税</td><td class="num">${yen(g.tax)}</td></tr>`;
+        }).join("")}
+      </table>
+    </div>
+    ${hasReduced?`<div class="inv-note">※は軽減税率対象品目です。</div>`:""}
+    ${rates.some(r=>items.filter(it=>Number(it.rate)===r).length>1)?`<div class="inv-note">消費税額は適格請求書等保存方式に基づき、税率ごとに区分した合計額に対して1回のみ端数処理しています(明細行ごとの税額は目安表示です)。</div>`:""}
+    <div class="inv-due">取引年月日: ${esc(s.date)}</div>
+    <div class="inv-bigtotal">ご請求金額：<span class="amt">${yen(t.total)}</span>（税込）</div>
+    <div class="inv-due">お支払期限: ${esc(dueDate)}</div>
+    <div style="margin-top:18px;font-size:12px">
+      <b>お振込先</b><br>${esc(co.bank)}<br>
+      <span class="muted">恐れ入りますが、振込手数料は貴社にてご負担いただけますようお願い申し上げます。<br>ご不明な点がございましたら、お気軽にお問い合わせください。</span>
+    </div>
+  </div>`;
+}
+function invoiceView(id){
+  const s=db.sales.find(x=>x.id===id);
+  if(!s.custId||!db.customers.find(c=>c.id===s.custId)){alert("取引先が未設定のため請求書を作成できません。");return;}
+  openModal(`
+    ${invoiceHtml(s)}
+    <div class="formfoot no-print" style="justify-content:center">
+      <button class="btn ghost" onclick="closeModal()">閉じる</button>
+      <button class="btn accent" onclick="invoicePrint('${id}')">印刷 / PDF保存</button>
+      ${s.status==="未請求"?`<button class="btn" onclick="invoiceIssue('${id}')">請求済にする</button>`:""}
+    </div>`);
+  if(!s.invoiced){s.invoiced=nowStamp();save();}
+}
+function invoiceIssue(id){const s=db.sales.find(x=>x.id===id);s.status="請求済";s.invoiced=nowStamp();save();closeModal();show("sales");}
+function invoicePrint(id){
+  const s=db.sales.find(x=>x.id===id);
+  $("#invoicePrintArea").innerHTML=invoiceHtml(s);
+  document.body.classList.add("printing-invoice");
+  window.print();
+  document.body.classList.remove("printing-invoice");
+}
+
+/* ================= purchases (発注・書類アップロード) ================= */
+const P_DOCS=[["quote","見積書"],["invoice","請求書"],["receipt","領収書"],["contract","契約書"]];
+let purF={q:"",from:"",to:"",method:"",status:""};
+PAGES.purchases=function(){
+  const list=db.purchases.filter(p=>{
+    if(purF.method&&p.method!==purF.method)return false;
+    if(purF.status&&p.status!==purF.status)return false;
+    if(purF.from&&p.date<purF.from)return false;
+    if(purF.to&&p.date>purF.to)return false;
+    if(purF.q&&![p.id,custName(p.custId),p.memo].join(" ").includes(purF.q))return false;
+    return true;
+  }).sort((a,b)=>(b.date||"").localeCompare(a.date||""));
+  $("#page").innerHTML=`
+    ${crumb("取引書類一覧")}
+    <h2 class="pagettl">取引書類一覧(仕入・アップロード)</h2>
+    <div class="panel">
+      <div class="toolbar">
+        <input type="text" id="pQ" placeholder="No・取引先名で検索" value="${esc(purF.q)}">
+        <input type="date" id="pF" title="発行日:開始日" value="${esc(purF.from)}" style="width:150px">
+        <input type="date" id="pT" title="発行日:終了日" value="${esc(purF.to)}" style="width:150px">
+        <select id="pM"><option value="">入金方法</option>${["現金","普通預金","当座預金","クレジット"].map(m=>`<option ${purF.method===m?"selected":""}>${m}</option>`).join("")}</select>
+        <select id="pS"><option value="">ステータス</option>${["未払い","支払い済"].map(m=>`<option ${purF.status===m?"selected":""}>${m}</option>`).join("")}</select>
+        <button class="btn small" onclick="purF={q:$('#pQ').value,from:$('#pF').value,to:$('#pT').value,method:$('#pM').value,status:$('#pS').value};show('purchases')">絞り込み</button>
+        <span style="flex:1"></span>
+        <button class="btn ghost small" onclick="purForm()">取引作成</button>
+      </div>
+      ${csvBarHtml("pur")}
+      <div class="card" style="overflow-x:auto">
+        <table class="list">
+          <tr><th>No</th><th>取引年月日</th><th>取引先名</th><th>入金方法</th><th class="num">取引金額</th><th class="num">税額</th><th>アップロード</th><th>ステータス</th>${P_DOCS.map(d=>`<th>${d[1]}</th>`).join("")}<th>操作</th></tr>
+          ${list.map(p=>`<tr>
+            <td class="muted">${esc(p.id)}</td>
+            <td>${dotDate(p.date)}</td>
+            <td>${esc(custName(p.custId))}</td>
+            <td>${esc(p.method)}</td>
+            <td class="num">${yen(p.amount)}</td>
+            <td class="num">${yen(p.tax)}</td>
+            <td>${dotDate(p.up)}</td>
+            <td><span class="badge ${p.status==="支払い済"?"warn":"gray"}">${p.status}</span></td>
+            ${P_DOCS.map(d=>`<td>${p.files&&p.files[d[0]]?`<a onclick="fileOpen('${p.id}','${d[0]}')">PDF</a>`:""}</td>`).join("")}
+            <td><button class="icon-btn" title="編集" onclick="purForm('${p.id}')">✎</button>
+                <button class="icon-btn" title="削除" onclick="purDel('${p.id}')">🗑</button></td>
+          </tr>`).join("")||`<tr><td colspan="${9+P_DOCS.length}" class="muted">取引書類がありません。</td></tr>`}
+        </table>
+        <div class="pager"><button>&lt;</button><button class="cur">1</button><button>&gt;</button></div>
+      </div>
+      <div class="muted">アップロードされた書類には受領後すみやかにタイムスタンプ(アップロード日時)が付与され、「取引年月日」「取引金額」「取引先」で検索できます(電子帳簿保存法対応)。<br>CSVインポート: 書類ファイルはCSVでは取り込めないため、登録後に各取引の編集からアップロードしてください。</div>
+    </div>`;
+  bindCsvImport("pur",purCsvImport);
+};
+const PUR_CSV_HEAD=["No","取引年月日","取引先名","入金方法","取引金額(税抜)","税額","ステータス","メモ"];
+function purCsvExport(){
+  csvDownload("発注取引一覧.csv",[PUR_CSV_HEAD,
+    ...db.purchases.map(p=>[p.id,p.date,custName(p.custId),p.method,p.amount,p.tax,p.status,p.memo])]);
+}
+function purCsvTemplate(){
+  csvDownload("発注取引一覧_テンプレート.csv",[["取引年月日","取引先名","入金方法","取引金額(税抜)","税額(空欄で自動計算)","ステータス","メモ"],
+    ["2026-08-01","サンプル商事株式会社","現金","88000","","未払い",""]]);
+}
+function purCsvImport(rows){
+  let added=0;
+  rows.forEach((x,i)=>{
+    // ヘッダー行(エクスポート形式/テンプレート形式の両方)をスキップ
+    if(i===0&&(x[0]===PUR_CSV_HEAD[0]||x[0]==="取引年月日"))return;
+    // エクスポート形式(No列あり: 日付は2列目)とテンプレート形式(No列なし: 日付は1列目)を自動判別
+    const b=/^\d{4}-\d{2}-\d{2}$/.test(String(x[0]||"").trim())?0:1;
+    const date=x[b]||today(), name=x[b+1], method=x[b+2]||"現金";
+    if(!String(name||"").trim())return;
+    const amount=Number(x[b+3])||0;
+    const taxCell=String(x[b+4]==null?"":x[b+4]).trim();
+    const tax=taxCell!==""&&!isNaN(Number(taxCell))?Number(taxCell):calcTax(amount);
+    const status=["未払い","支払い済"].includes(x[b+5])?x[b+5]:"未払い";
+    db.purchases.push({id:uid().slice(0,9),date,custId:custIdByName(name),method,amount,tax,status,memo:x[b+6]||"",files:{},up:today()});
+    added++;
+  });
+  save();alert(`インポート完了: ${added}件の取引を登録しました`);show("purchases");
+}
+let purFiles={};
+function purForm(id){
+  const p=id?db.purchases.find(x=>x.id===id):{date:today(),custId:"",method:"",amount:"",tax:"",status:"未払い",files:{},memo:""};
+  purFiles=Object.assign({},p.files);
+  openModal(`
+    <h3>${id?"取引書類編集":"取引書類一覧(アップロード)作成"}</h3>
+    <div class="grid2">
+      <div>
+        <div class="field"><label><span class="req">必須</span>取引先名</label>
+          <select id="pf_cust">${custOptions(p.custId)}</select>
+          <div style="margin-top:6px"><button class="btn ghost small" onclick="custForm(null,true)">顧客情報を新規登録</button></div>
+        </div>
+        <div class="field"><label><span class="req">必須</span>取引年月日</label><input type="date" id="pf_date" value="${esc(p.date)}"></div>
+        <div class="field"><label><span class="req">必須</span>入金方法</label>
+          <select id="pf_method"><option value="">選択してください</option>${["現金","普通預金","当座預金","クレジット"].map(m=>`<option ${p.method===m?"selected":""}>${m}</option>`).join("")}</select></div>
+        <div class="field"><label><span class="req">必須</span>取引金額(税抜)</label><input type="number" id="pf_amount" value="${esc(p.amount)}" oninput="$('#pf_tax').value=calcTax(Number(this.value)||0)"></div>
+        <div class="field"><label><span class="req">必須</span>税額</label><input type="number" id="pf_tax" value="${esc(p.tax)}"></div>
+        <div class="field"><label><span class="req">必須</span>ステータス</label>
+          <select id="pf_status">${["未払い","支払い済"].map(m=>`<option ${p.status===m?"selected":""}>${m}</option>`).join("")}</select></div>
+      </div>
+      <div>
+        ${P_DOCS.map(d=>`
+          <div class="field"><label>${d[1]}</label>
+            <div class="upload-box ${purFiles[d[0]]?"has":""}" id="ub_${d[0]}">
+              ${purFiles[d[0]]?"✓ アップロード済み":"⬆ ファイルを選択またはここにドロップします<br>PDF, JPG, PNG (up to 10MB)"}
+            </div>
+            <input type="file" id="uf_${d[0]}" accept=".pdf,.jpg,.jpeg,.png" style="margin-top:6px">
+          </div>`).join("")}
+        <div class="field"><label>メモ</label><textarea id="pf_memo" rows="2">${esc(p.memo)}</textarea></div>
+      </div>
+    </div>
+    <div class="formfoot">
+      <button class="btn ghost" onclick="closeModal()">キャンセル</button>
+      <button class="btn" onclick="purSave('${id||""}')">${id?"更新":"作成"}</button>
+    </div>`);
+  P_DOCS.forEach(d=>{
+    $("#uf_"+d[0]).addEventListener("change",e=>{
+      const f=e.target.files[0];if(!f)return;
+      if(f.size>10*1024*1024){alert("10MB以下のファイルを選択してください。");e.target.value="";return;}
+      const r=new FileReader();
+      r.onload=()=>{purFiles[d[0]]={name:f.name,data:r.result,ts:nowStamp()};
+        const b=$("#ub_"+d[0]);b.classList.add("has");b.innerHTML="✓ "+esc(f.name);};
+      r.readAsDataURL(f);
+    });
+  });
+}
+function purSave(id){
+  const custId=$("#pf_cust").value,date=$("#pf_date").value,method=$("#pf_method").value;
+  if(!custId||!date||!method||!$("#pf_amount").value){alert("必須項目を入力してください。");return;}
+  const data={custId,date,method,amount:Number($("#pf_amount").value),tax:Number($("#pf_tax").value),
+    status:$("#pf_status").value,memo:$("#pf_memo").value,files:purFiles,up:today()};
+  if(id){Object.assign(db.purchases.find(p=>p.id===id),data);}
+  else{data.id=uid().slice(0,9);db.purchases.push(data);}
+  save();closeModal();show("purchases");
+}
+function purDel(id){if(confirm("この取引書類を削除しますか?")){db.purchases=db.purchases.filter(p=>p.id!==id);save();show("purchases");}}
+function fileOpen(pid,key){
+  const p=db.purchases.find(x=>x.id===pid),f=p.files[key];
+  if(!f){alert("サンプルデータのためファイル実体はありません。");return;}
+  const a=document.createElement("a");a.href=f.data;a.download=f.name;a.click();
+}
+
+/* ================= 仕訳帳・総勘定元帳 ================= */
+const ACCTS=["現金","普通預金","売掛金","買掛金","商品","備品","借入金","資本金","売上高","仕入高","給料手当","地代家賃","通信費","消耗品費","雑費"];
+function acctDatalist(){
+  const used=new Set(ACCTS);
+  (db.ledger.rows||[]).forEach(r=>{if(r.drAcct)used.add(r.drAcct);if(r.crAcct)used.add(r.crAcct);});
+  return `<datalist id="acctList">${[...used].map(a=>`<option value="${esc(a)}">`).join("")}</datalist>`;
+}
+let ledgerTab="jnl";
+PAGES.ledger=function(){
+  const L=db.ledger, rows=L.rows;
+  $("#page").innerHTML=`
+    ${crumb("総勘定元帳")}
+    <h2 class="pagettl">総勘定元帳</h2>
+    <div class="lgLayout">
+      <div class="lgSide">
+        <button class="btn ghost small" onclick="ledgerAdd()">+ 1行追加</button>
+        <button class="btn blue small" onclick="$('#ledgerCsvFile').click()">⬆ CSVインポート</button>
+        <input type="file" id="ledgerCsvFile" accept=".csv" style="display:none">
+      </div>
+      <div class="panel" style="flex:1">
+        <div class="tabbar">
+          <a class="${ledgerTab==="jnl"?"active":""}" onclick="ledgerTab='jnl';refresh()">仕訳帳</a>
+          <a class="${ledgerTab==="lg"?"active":""}" onclick="ledgerTab='lg';refresh()">総勘定元帳</a>
+        </div>
+        ${ledgerTab==="jnl"?journalTabHtml(L,rows):ledgerTabHtml()}
+      </div>
+    </div>`;
+  if(ledgerTab==="jnl"){
+    $("#lgTable").addEventListener("change",e=>{
+      const i=e.target.dataset.i,k=e.target.dataset.k;
+      if(i==null)return;
+      db.ledger.rows[i][k]=(k==="drAmt"||k==="crAmt")?Number(e.target.value)||0:e.target.value;
+      save();refresh();
+    });
+    $("#lg_date").addEventListener("change",e=>{db.ledger.date=e.target.value;save();});
+  }
+  bindCsvImport("ledger",ledgerCsvImport);
+};
+function journalTabHtml(L,rows){
+  return `
+    <div class="sheet-head">日付: <input type="date" id="lg_date" value="${esc(L.date)}" style="width:160px"></div>
+    <div style="overflow-x:auto">
+    ${acctDatalist()}
+    <table class="sheet" id="lgTable">
+      <tr><th>伝票No.</th><th>年</th><th>月</th><th>日</th><th>借方勘定科目</th><th>金額</th><th>貸方勘定科目</th><th>金額</th><th>勘定科目</th><th>摘要</th><th>仕丁</th><th>借方</th><th>貸方</th><th>残高</th></tr>
+      ${rows.map((r,i)=>`<tr>
+        <td><input data-i="${i}" data-k="no" value="${esc(r.no)}" style="width:80px"></td>
+        <td><input data-i="${i}" data-k="year" value="${esc(r.year)}" style="width:60px;text-align:center"></td>
+        <td><input data-i="${i}" data-k="m" value="${esc(r.m)}" style="width:44px;text-align:center"></td>
+        <td><input data-i="${i}" data-k="d" value="${esc(r.d)}" style="width:44px;text-align:center"></td>
+        <td><input data-i="${i}" data-k="drAcct" list="acctList" value="${esc(r.drAcct)}" style="width:110px"></td>
+        <td><input data-i="${i}" data-k="drAmt" type="number" class="num" value="${r.drAmt||""}" style="width:100px;text-align:right"></td>
+        <td><input data-i="${i}" data-k="crAcct" list="acctList" value="${esc(r.crAcct)}" style="width:110px"></td>
+        <td><input data-i="${i}" data-k="crAmt" type="number" class="num" value="${r.crAmt||""}" style="width:100px;text-align:right"></td>
+        <td class="muted" style="padding:4px 8px">${esc([r.drAcct,r.crAcct].filter(Boolean).join("／"))}</td>
+        <td><input data-i="${i}" data-k="note" value="${esc(r.note)}" style="width:140px"></td>
+        <td><input data-i="${i}" data-k="page" value="${esc(r.page)}" style="width:44px;text-align:center"></td>
+        <td class="num muted" style="padding:4px 8px">${r.drAmt?num(r.drAmt):""}</td>
+        <td class="num muted" style="padding:4px 8px">${r.crAmt?num(r.crAmt):""}</td>
+        <td class="num muted" style="padding:4px 8px"></td>
+      </tr>`).join("")}
+      <tr><td class="total" colspan="5">合計</td>
+        <td class="total num" style="padding:4px 8px">${num(rows.reduce((t,r)=>t+Number(r.drAmt||0),0))}</td>
+        <td class="total"></td>
+        <td class="total num" style="padding:4px 8px">${num(rows.reduce((t,r)=>t+Number(r.crAmt||0),0))}</td>
+        <td class="total" colspan="3"></td>
+        <td class="total num" style="padding:4px 8px">${num(rows.reduce((t,r)=>t+Number(r.drAmt||0),0))}</td>
+        <td class="total num" style="padding:4px 8px">${num(rows.reduce((t,r)=>t+Number(r.crAmt||0),0))}</td>
+        <td class="total"></td></tr>
+    </table>
+    </div>
+    <div class="formfoot">
+      <button class="btn" onclick="ledgerSave(true)">保存する</button>
+      <button class="btn ghost" onclick="ledgerCsvExport()">CSV保存</button>
+    </div>`;
+}
+function ledgerAccts(){
+  const used=[];
+  db.ledger.rows.forEach(r=>{[r.drAcct,r.crAcct].forEach(a=>{if(a&&!used.includes(a))used.push(a);});});
+  return used;
+}
+function ledgerSortKey(r){
+  return `${String(r.year||"0").padStart(4,"0")}-${String(r.m||"0").padStart(2,"0")}-${String(r.d||"0").padStart(2,"0")}`;
+}
+function ledgerEntries(acct){
+  const es=[];
+  db.ledger.rows.forEach(r=>{
+    if(r.drAcct===acct&&Number(r.drAmt))es.push({no:r.no,year:r.year,m:r.m,d:r.d,note:r.note,other:r.crAcct||"諸口",dr:Number(r.drAmt),cr:0});
+    if(r.crAcct===acct&&Number(r.crAmt))es.push({no:r.no,year:r.year,m:r.m,d:r.d,note:r.note,other:r.drAcct||"諸口",dr:0,cr:Number(r.crAmt)});
+  });
+  return es.sort((a,b)=>ledgerSortKey(a).localeCompare(ledgerSortKey(b)));
+}
+function ledgerTabHtml(){
+  const accts=ledgerAccts();
+  if(!accts.length)return `<div class="muted" style="padding:14px 0">仕訳帳に仕訳を登録すると、勘定科目ごとに自動で表示されます。</div>`;
+  return accts.map(acct=>{
+    let bal=0;
+    const es=ledgerEntries(acct);
+    return `<div style="margin-bottom:22px">
+      <div style="border-left:4px solid var(--navy);background:#f4f8fd;padding:8px 12px;font-weight:700;color:var(--navy);margin-bottom:8px">勘定科目: ${esc(acct)}</div>
+      <div style="overflow-x:auto">
+      <table class="sheet">
+        <tr><th>伝票No.</th><th>年</th><th>月</th><th>日</th><th>摘要</th><th>相手科目</th><th>借方</th><th>貸方</th><th>残高</th></tr>
+        ${es.map(e=>{bal+=e.dr-e.cr;return `<tr>
+          <td>${esc(e.no)}</td><td>${esc(e.year)}</td><td>${esc(e.m)}</td><td>${esc(e.d)}</td>
+          <td>${esc(e.note)}</td><td>${esc(e.other)}</td>
+          <td class="num" style="padding:4px 8px">${e.dr?num(e.dr):""}</td>
+          <td class="num" style="padding:4px 8px">${e.cr?num(e.cr):""}</td>
+          <td class="num" style="padding:4px 8px">${num(bal)}</td>
+        </tr>`;}).join("")}
+      </table>
+      </div>
+    </div>`;
+  }).join("")+`
+    <div class="formfoot">
+      <button class="btn ghost" onclick="ledgerTab='jnl';refresh()">仕訳帳へ</button>
+      <button class="btn ghost" onclick="ledgerCsvExport()">CSV保存</button>
+    </div>`;
+}
+function ledgerCollect(){
+  document.querySelectorAll("#lgTable [data-i]").forEach(el=>{
+    const k=el.dataset.k;
+    db.ledger.rows[el.dataset.i][k]=(k==="drAmt"||k==="crAmt")?Number(el.value)||0:el.value;
+  });
+}
+function ledgerAdd(){
+  ledgerTab="jnl";
+  ledgerCollect();
+  const y=String(new Date(db.ledger.date||today()).getFullYear());
+  db.ledger.rows.push({no:"",year:y,m:"",d:"",drAcct:"",drAmt:0,crAcct:"",crAmt:0,note:"",page:""});
+  save();refresh();
+}
+function ledgerSave(msg){ledgerCollect();db.ledger.date=$("#lg_date").value;save();if(msg)alert("保存しました。");refresh();}
+const LEDGER_CSV_HEAD=["伝票No.","年","月","日","借方勘定科目","金額","貸方勘定科目","金額","勘定科目","摘要","仕丁","借方","貸方","残高"];
+function ledgerCsvExport(){
+  if(ledgerTab==="jnl")ledgerCollect();
+  csvDownload("総勘定元帳.csv",[LEDGER_CSV_HEAD,
+    ...db.ledger.rows.map(r=>[r.no,r.year,r.m,r.d,r.drAcct,r.drAmt||"",r.crAcct,r.crAmt||"",
+      [r.drAcct,r.crAcct].filter(Boolean).join("／"),r.note,r.page,r.drAmt||"",r.crAmt||"",""])]);
+}
+function ledgerCsvImport(rows){
+  let added=0;
+  rows.forEach((x,i)=>{
+    if(i===0&&x[0]===LEDGER_CSV_HEAD[0])return;
+    if(!x[0]&&!x[4]&&!x[6])return;
+    db.ledger.rows.push({no:x[0]||"",year:x[1]||"",m:x[2]||"",d:x[3]||"",drAcct:x[4]||"",drAmt:Number(x[5])||0,
+      crAcct:x[6]||"",crAmt:Number(x[7])||0,note:x[9]||"",page:x[10]||""});
+    added++;
+  });
+  save();alert(`インポート完了: ${added}件の仕訳を登録しました`);ledgerTab="jnl";show("ledger");
+}
+
+/* ================= 財務三表共通 ================= */
+function rowsEditor(rows,prefix){
+  return rows.map((r,i)=>`<tr>
+    <td><input data-p="${prefix}" data-i="${i}" data-k="name" value="${esc(r.name)}"></td>
+    <td style="width:180px"><input data-p="${prefix}" data-i="${i}" data-k="v" type="number" value="${r.v||0}" style="text-align:right"></td>
+  </tr>`).join("");
+}
+function sumRows(rows){return rows.reduce((t,r)=>t+(Number(r.v)||0),0);}
+function bindSheet(tableId,map,page){
+  $(tableId).addEventListener("change",e=>{
+    const p=e.target.dataset.p;if(!p)return;
+    map[p][e.target.dataset.i][e.target.dataset.k]=e.target.dataset.k==="v"?Number(e.target.value)||0:e.target.value;
+    save();show(page);
+  });
+}
+function tri(n){return n<0?"△"+num(-n):num(n);}
+
+/* ================= 貸借対照表 ================= */
+PAGES.bs=function(){
+  const B=db.bs, ta=sumRows(B.assets), tl=sumRows(B.liabs), te=sumRows(B.equity);
+  $("#page").innerHTML=`
+    ${crumb("貸借対照表")}
+    <h2 class="pagettl">貸借対照表</h2>
+    <div class="panel">
+      <div class="sheet-head">
+        <div>
+          <button class="btn ghost small" onclick="bsAdd('assets')">+ 資産 1行追加</button>
+          <button class="btn ghost small" onclick="bsAdd('liabs')">+ 負債 1行追加</button>
+          <button class="btn ghost small" onclick="bsAdd('equity')">+ 純資産 1行追加</button>
+        </div>
+        <span class="ttl" style="margin:0 auto">貸借対照表</span>
+        <span class="unit">(単位:円)</span>
+      </div>
+      <div class="sheet-head">日付: <input type="date" id="bs_date" value="${esc(B.date)}" style="width:160px"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px" id="bsWrap">
+        <table class="sheet" id="bsA">
+          <tr><th colspan="2">資産の部</th></tr>
+          ${rowsEditor(B.assets,"assets")}
+          <tr><td class="total">資産の部合計</td><td class="total num" style="padding:4px 8px">${num(ta)}</td></tr>
+        </table>
+        <table class="sheet" id="bsL">
+          <tr><th colspan="2">負債の部</th></tr>
+          ${rowsEditor(B.liabs,"liabs")}
+          <tr><td class="total">負債の部合計</td><td class="total num" style="padding:4px 8px">${num(tl)}</td></tr>
+          <tr><th colspan="2">純資産の部</th></tr>
+          ${rowsEditor(B.equity,"equity")}
+          <tr><td class="total">純資産の部合計</td><td class="total num" style="padding:4px 8px">${num(te)}</td></tr>
+          <tr><td class="total">負債・純資産の部合計</td><td class="total num" style="padding:4px 8px">${num(tl+te)}</td></tr>
+        </table>
+      </div>
+      ${ta!==tl+te?`<div style="color:var(--danger);font-size:12px;margin-top:8px">⚠ 資産合計(${num(ta)})と負債・純資産合計(${num(tl+te)})が一致していません。</div>`:`<div style="color:var(--ok);font-size:12px;margin-top:8px">✓ 貸借一致しています。</div>`}
+      <div class="formfoot">
+        <button class="btn" onclick="db.bs.date=$('#bs_date').value;save();alert('保存しました。')">保存する</button>
+        <button class="btn ghost" onclick="bsCsv()">CSV保存</button>
+      </div>
+    </div>`;
+  bindSheet("#bsWrap",{assets:B.assets,liabs:B.liabs,equity:B.equity},"bs");
+  $("#bs_date").addEventListener("change",e=>{db.bs.date=e.target.value;save();});
+};
+function bsAdd(k){db.bs[k].push({name:"",v:0});save();show("bs");}
+function bsCsv(){
+  const B=db.bs;
+  csvDownload("貸借対照表.csv",[["貸借対照表","日付",B.date],["【資産の部】",""],
+    ...B.assets.map(r=>[r.name,r.v]),["資産の部合計",sumRows(B.assets)],["【負債の部】",""],
+    ...B.liabs.map(r=>[r.name,r.v]),["負債の部合計",sumRows(B.liabs)],["【純資産の部】",""],
+    ...B.equity.map(r=>[r.name,r.v]),["純資産の部合計",sumRows(B.equity)],
+    ["負債・純資産の部合計",sumRows(B.liabs)+sumRows(B.equity)]]);
+}
+
+/* ================= 損益計算書 ================= */
+PAGES.pl=function(){
+  const P=db.pl;
+  const rev=P.rows.filter(r=>r.type==="収益"),exp=P.rows.filter(r=>r.type==="費用");
+  const profit=sumRows(rev)-sumRows(exp);
+  $("#page").innerHTML=`
+    ${crumb("損益計算書")}
+    <h2 class="pagettl">損益計算書</h2>
+    <div class="panel">
+      <div class="sheet-head">
+        <button class="btn ghost small" onclick="plAdd()">+ 1行追加</button>
+        <span class="ttl" style="margin:0 auto">損益計算書</span>
+        <span class="unit">(単位:円)</span>
+      </div>
+      <div class="sheet-head">自: <input type="date" id="pl_from" value="${esc(P.from)}" style="width:150px">
+        至: <input type="date" id="pl_to" value="${esc(P.to)}" style="width:150px"></div>
+      <table class="sheet" id="plTable">
+        <tr><th>科目</th><th style="width:120px">区分</th><th style="width:200px">金額</th></tr>
+        ${P.rows.map((r,i)=>`<tr>
+          <td><input data-i="${i}" data-k="name" value="${esc(r.name)}"></td>
+          <td><select data-i="${i}" data-k="type"><option ${r.type==="収益"?"selected":""}>収益</option><option ${r.type==="費用"?"selected":""}>費用</option></select></td>
+          <td><input data-i="${i}" data-k="v" type="number" value="${r.v||0}" style="text-align:right"></td>
+        </tr>`).join("")}
+        <tr><td class="total" colspan="2">収益合計</td><td class="total num" style="padding:4px 8px">${num(sumRows(rev))}</td></tr>
+        <tr><td class="total" colspan="2">費用合計</td><td class="total num" style="padding:4px 8px">${num(sumRows(exp))}</td></tr>
+        <tr><td class="total" colspan="2">当期純利益</td><td class="total num" style="padding:4px 8px">${tri(profit)}</td></tr>
+      </table>
+      <div class="formfoot">
+        <button class="btn" onclick="db.pl.from=$('#pl_from').value;db.pl.to=$('#pl_to').value;save();alert('保存しました。')">保存する</button>
+        <button class="btn ghost" onclick="plCsv()">CSV保存</button>
+      </div>
+    </div>`;
+  $("#plTable").addEventListener("change",e=>{
+    const i=e.target.dataset.i;if(i==null)return;
+    db.pl.rows[i][e.target.dataset.k]=e.target.dataset.k==="v"?Number(e.target.value)||0:e.target.value;
+    save();show("pl");
+  });
+};
+function plAdd(){db.pl.rows.push({name:"",type:"費用",v:0});save();show("pl");}
+function plCsv(){
+  const P=db.pl,rev=P.rows.filter(r=>r.type==="収益"),exp=P.rows.filter(r=>r.type==="費用");
+  csvDownload("損益計算書.csv",[["損益計算書","自",P.from,"至",P.to],["科目","区分","金額"],
+    ...P.rows.map(r=>[r.name,r.type,r.v]),["収益合計","",sumRows(rev)],["費用合計","",sumRows(exp)],
+    ["当期純利益","",sumRows(rev)-sumRows(exp)]]);
+}
+
+/* ================= キャッシュフロー計算書 ================= */
+PAGES.cf=function(){
+  const C=db.cf, so=sumRows(C.op), si=sumRows(C.inv), sf=sumRows(C.fin);
+  const delta=so+si+sf, end=Number(C.beg||0)+delta;
+  const sec=(rows,p)=>rows.map((r,i)=>`<tr>
+      <td style="padding-left:24px"><input data-p="${p}" data-i="${i}" data-k="name" value="${esc(r.name)}"></td>
+      <td style="width:200px"><input data-p="${p}" data-i="${i}" data-k="v" type="number" value="${r.v||0}" style="text-align:right"></td>
+    </tr>`).join("");
+  $("#page").innerHTML=`
+    ${crumb("キャッシュフロー計算書")}
+    <h2 class="pagettl">キャッシュフロー計算書</h2>
+    <div class="panel">
+      <div class="sheet-head">
+        <div>
+          <button class="btn ghost small" onclick="cfAdd('op')">+ 営業活動 1行追加</button>
+          <button class="btn ghost small" onclick="cfAdd('inv')">+ 投資活動 1行追加</button>
+          <button class="btn ghost small" onclick="cfAdd('fin')">+ 財務活動 1行追加</button>
+        </div>
+        <span class="ttl" style="margin:0 auto">キャッシュフロー計算書</span>
+        <span class="unit">(単位:円)</span>
+      </div>
+      <div class="sheet-head">自: <input type="date" id="cf_from" value="${esc(C.from)}" style="width:150px">
+        至: <input type="date" id="cf_to" value="${esc(C.to)}" style="width:150px"></div>
+      <table class="sheet" id="cfTable">
+        <tr><th colspan="2">Ⅰ 営業活動によるキャッシュ・フロー</th></tr>
+        ${sec(C.op,"op")}
+        <tr><td class="total">営業活動によるキャッシュ・フロー</td><td class="total num" style="padding:4px 8px">${tri(so)}</td></tr>
+        <tr><th colspan="2">Ⅱ 投資活動によるキャッシュ・フロー</th></tr>
+        ${sec(C.inv,"inv")}
+        <tr><td class="total">投資活動によるキャッシュ・フロー</td><td class="total num" style="padding:4px 8px">${tri(si)}</td></tr>
+        <tr><th colspan="2">Ⅲ 財務活動によるキャッシュ・フロー</th></tr>
+        ${sec(C.fin,"fin")}
+        <tr><td class="total">財務活動によるキャッシュ・フロー</td><td class="total num" style="padding:4px 8px">${tri(sf)}</td></tr>
+        <tr><td class="total">Ⅳ 現金及び現金同等物の増減額</td><td class="total num" style="padding:4px 8px">${tri(delta)}</td></tr>
+        <tr><td class="total">Ⅴ 現金及び現金同等物の期首残高</td><td style="width:200px"><input id="cf_beg" type="number" value="${C.beg||0}" style="text-align:right"></td></tr>
+        <tr><td class="total">Ⅵ 現金及び現金同等物の期末残高</td><td class="total num" style="padding:4px 8px">${tri(end)}</td></tr>
+      </table>
+      <div class="formfoot">
+        <button class="btn" onclick="db.cf.from=$('#cf_from').value;db.cf.to=$('#cf_to').value;save();alert('保存しました。')">保存する</button>
+        <button class="btn ghost" onclick="cfCsv()">CSV保存</button>
+      </div>
+    </div>`;
+  bindSheet("#cfTable",{op:C.op,inv:C.inv,fin:C.fin},"cf");
+  $("#cf_beg").addEventListener("change",e=>{db.cf.beg=Number(e.target.value)||0;save();show("cf");});
+};
+function cfAdd(k){db.cf[k].push({name:"",v:0});save();show("cf");}
+function cfCsv(){
+  const C=db.cf,so=sumRows(C.op),si=sumRows(C.inv),sf=sumRows(C.fin);
+  csvDownload("キャッシュフロー計算書.csv",[["キャッシュフロー計算書","自",C.from,"至",C.to],
+    ["Ⅰ 営業活動によるキャッシュ・フロー",""],...C.op.map(r=>[r.name,r.v]),["営業活動によるキャッシュ・フロー",so],
+    ["Ⅱ 投資活動によるキャッシュ・フロー",""],...C.inv.map(r=>[r.name,r.v]),["投資活動によるキャッシュ・フロー",si],
+    ["Ⅲ 財務活動によるキャッシュ・フロー",""],...C.fin.map(r=>[r.name,r.v]),["財務活動によるキャッシュ・フロー",sf],
+    ["Ⅳ 現金及び現金同等物の増減額",so+si+sf],["Ⅴ 現金及び現金同等物の期首残高",C.beg],
+    ["Ⅵ 現金及び現金同等物の期末残高",Number(C.beg||0)+so+si+sf]]);
+}
+
+/* ================= 設定 ================= */
+PAGES.settings=function(){
+  const S=db.settings,co=S.company;
+  $("#page").innerHTML=`
+    ${crumb("会計・消費税設定")}
+    <h2 class="pagettl">会計 / 端数・消費税設定</h2>
+    <div class="panel">
+      <div class="card">
+        <b style="color:var(--navy)">消費税・端数処理</b>
+        <div class="grid2" style="margin-top:10px">
+          <div class="field"><label>消費税率(%)</label>
+            <select id="st_tax">${[10,8,0].map(t=>`<option value="${t}" ${S.taxRate==t?"selected":""}>${t}%</option>`).join("")}</select></div>
+          <div class="field"><label>端数処理</label>
+            <select id="st_round">
+              <option value="floor" ${S.rounding==="floor"?"selected":""}>切り捨て</option>
+              <option value="round" ${S.rounding==="round"?"selected":""}>四捨五入</option>
+              <option value="ceil" ${S.rounding==="ceil"?"selected":""}>切り上げ</option>
+            </select></div>
+        </div>
+      </div>
+      <div class="card">
+        <b style="color:var(--navy)">自社情報(請求書に記載されます)</b>
+        <div class="grid2" style="margin-top:10px">
+          <div class="field"><label>会社名</label><input id="st_name" value="${esc(co.name)}"></div>
+          <div class="field"><label>適格請求書発行事業者 登録番号</label><input id="st_reg" value="${esc(co.regNo)}"></div>
+          <div class="field"><label>郵便番号</label><input id="st_zip" value="${esc(co.zip)}"></div>
+          <div class="field"><label>電話番号</label><input id="st_tel" value="${esc(co.tel)}"></div>
+        </div>
+        <div class="field"><label>住所</label><input id="st_addr" value="${esc(co.addr)}"></div>
+        <div class="field"><label>振込先</label><input id="st_bank" value="${esc(co.bank)}"></div>
+      </div>
+      <div class="formfoot">
+        <button class="btn" onclick="settingsSave()">保存する</button>
+        <button class="btn danger" onclick="resetAll()">デモデータを初期化</button>
+      </div>
+    </div>`;
+};
+function settingsSave(){
+  const S=db.settings;
+  S.taxRate=Number($("#st_tax").value);S.rounding=$("#st_round").value;
+  Object.assign(S.company,{name:$("#st_name").value,regNo:$("#st_reg").value,zip:$("#st_zip").value,
+    tel:$("#st_tel").value,addr:$("#st_addr").value,bank:$("#st_bank").value});
+  save();alert("保存しました。");
+}
+function resetAll(){
+  if(!confirm("すべてのデータを初期状態に戻します。よろしいですか?"))return;
+  try{localStorage.removeItem(LS_KEY);}catch(e){}
+  location.reload();
+}
+
+/* ================= プロフィール ================= */
+PAGES.profile=function(){
+  const P=db.profile;
+  $("#page").innerHTML=`
+    ${crumb("プロフィール")}
+    <h2 class="pagettl">プロフィール編集</h2>
+    <div class="panel">
+      <div class="card">
+        <div class="field"><label>氏名</label><input id="pr_name" value="${esc(P.name)}"></div>
+        <div class="field"><label>メールアドレス(ログインID)</label><input id="pr_email" value="${esc(P.email)}"></div>
+        <div class="formfoot"><button class="btn" onclick="profileSave()">保存する</button></div>
+      </div>
+      <div class="card">
+        <b style="color:var(--navy)">パスワード変更</b>
+        <div class="grid2" style="margin-top:10px">
+          <div class="field"><label>現在のパスワード</label><input type="password" id="pw_old"></div>
+          <div class="field"><label>新しいパスワード</label><input type="password" id="pw_new"></div>
+        </div>
+        <div class="formfoot"><button class="btn" onclick="pwChange()">パスワードを変更する</button></div>
+      </div>
+    </div>`;
+};
+function profileSave(){
+  const email=$("#pr_email").value.trim();
+  if(!email){alert("メールアドレスを入力してください。");return;}
+  db.profile.name=$("#pr_name").value;db.profile.email=email;save();
+  $("#userLabel").textContent=db.profile.name+"("+db.profile.email+")";
+  alert("保存しました。次回から新しいメールアドレスでログインしてください。");
+}
+function pwChange(){
+  if($("#pw_old").value!==db.profile.pw){alert("現在のパスワードが一致しません。");return;}
+  if(($("#pw_new").value||"").length<4){alert("新しいパスワードは4文字以上で入力してください。");return;}
+  db.profile.pw=$("#pw_new").value;save();alert("パスワードを変更しました。");show("profile");
+}
+
+/* ================= 支払通知書 ================= */
+let payF={from:"",to:""}, payEditId=null;
+const NOTICE_TAX_OPTS=["非課税","8%","8%軽減税率","10%"];
+function noticeTaxRate(tax){
+  if(tax==="10%")return 10;
+  if(tax==="8%"||tax==="8%軽減税率")return 8;
+  return 0;
+}
+function noticeCalc(n){
+  let sub=0,tax=0;
+  (n.items||[]).forEach(it=>{
+    const a=(Number(it.price)||0)*(Number(it.qty)||0);
+    sub+=a; tax+=calcTaxAt(a,noticeTaxRate(it.tax));
+  });
+  return {sub,tax,total:sub+tax};
+}
+PAGES.paynotices=function(){
+  const list=db.paymentNotices.filter(n=>{
+    if(payF.from&&n.payDate<payF.from)return false;
+    if(payF.to&&n.payDate>payF.to)return false;
+    return true;
+  }).sort((a,b)=>(b.created||"").localeCompare(a.created||""));
+  $("#page").innerHTML=`
+    ${crumb("支払通知書一覧")}
+    <h2 class="pagettl">支払通知書一覧</h2>
+    <div class="panel">
+      <div class="toolbar">
+        支払日: <input type="date" id="nF" value="${esc(payF.from)}" style="width:150px">
+        〜 <input type="date" id="nT" value="${esc(payF.to)}" style="width:150px">
+        <button class="btn small" onclick="payF={from:$('#nF').value,to:$('#nT').value};show('paynotices')">絞り込み</button>
+        <span style="flex:1"></span>
+        <button class="btn ghost small" onclick="payEditId=null;show('payform')">支払通知書作成</button>
+      </div>
+      <div class="card" style="overflow-x:auto">
+        <table class="list">
+          <tr><th>通知番号</th><th>件名</th><th>支払日</th><th class="num">合計金額</th><th>作成日</th><th>取引先</th><th>操作</th></tr>
+          ${list.map(n=>{const c=noticeCalc(n);return `<tr>
+            <td><a onclick="noticeView('${n.id}')">${esc(n.id)}</a></td>
+            <td>${esc(n.title)}</td>
+            <td>${dotDate(n.payDate)}</td>
+            <td class="num">${yen(c.total)}</td>
+            <td>${dotDate(n.created)}</td>
+            <td>${esc(custName(n.custId))}</td>
+            <td><button class="icon-btn" title="表示" onclick="noticeView('${n.id}')">📄</button>
+                <button class="icon-btn" title="編集" onclick="payEditId='${n.id}';show('payform')">✎</button>
+                <button class="icon-btn" title="削除" onclick="noticeDel('${n.id}')">🗑</button></td>
+          </tr>`;}).join("")||`<tr><td colspan="7" class="muted">データがありません</td></tr>`}
+        </table>
+        <div class="pager"><button>&lt;</button><button class="cur">1</button><button>&gt;</button></div>
+      </div>
+    </div>`;
+};
+function noticeDel(id){if(confirm("この支払通知書を削除しますか?")){db.paymentNotices=db.paymentNotices.filter(n=>n.id!==id);save();show("paynotices");}}
+let payDraft=null;
+PAGES.payform=function(){
+  if(payEditId){
+    const src=db.paymentNotices.find(n=>n.id===payEditId);
+    if(!payDraft||payDraft.id!==payEditId)payDraft=JSON.parse(JSON.stringify(src));
+  }else if(!payDraft||payDraft._saved||db.paymentNotices.find(n=>n.id===payDraft.id)){
+    noticeNoBump=0;
+    payDraft={id:autoNoticeNo(), custId:"", title:"", payDate:today(), created:today(), items:[]};
+  }
+  const co=db.settings.company, c=noticeCalc(payDraft);
+  $("#page").innerHTML=`
+    ${crumb("支払通知書作成")}
+    <h2 class="pagettl">← 支払通知書${payEditId?"編集":"作成"}</h2>
+    <div class="panel">
+      <div class="card">
+        <div class="secttl"><span class="n">1</span>取引先情報</div>
+        <div class="field"><label><span class="req">必須</span>取引先名</label>
+          <select id="nf_cust">${custOptions(payDraft.custId)}</select></div>
+      </div>
+      <div class="card">
+        <div class="secttl"><span class="n">2</span>事業者情報</div>
+        <div style="font-size:13px"><b>${esc(co.name)}</b><br><span class="muted">〒${esc(co.zip)} ${esc(co.addr)}</span></div>
+      </div>
+      <div class="card">
+        <div class="secttl"><span class="n">3</span>入金口座情報 <button class="btn ghost small" onclick="bankEdit()">編集 預金口座情報</button></div>
+        <div style="font-size:13px">${esc(co.bank)||'<span style="color:var(--danger)">銀行情報を更新してください</span>'}</div>
+      </div>
+      <div class="card">
+        <div class="secttl"><span class="n">4</span>基本情報</div>
+        <div class="grid2">
+          <div class="field"><label>支払日</label><input type="date" id="nf_date" value="${esc(payDraft.payDate)}"></div>
+          <div class="field"><label>支払通知書番号</label><input value="${esc(payDraft.id)}" readonly style="background:#eef2f8">
+            ${payEditId?`<div class="muted">自動発行された番号です(変更不可)</div>`:`<a onclick="payRegenNo()" style="font-size:12px">🔄 番号を採番し直す</a>`}</div>
+        </div>
+        <div class="field"><label>件名</label><input id="nf_title" value="${esc(payDraft.title)}"></div>
+      </div>
+      <div class="card">
+        <div class="secttl"><span class="n">5</span>明細情報</div>
+        <div class="right"><button class="btn ghost small" onclick="payItemAdd()">明細を新規登録</button></div>
+        <div style="overflow-x:auto">
+        <table class="sheet" id="payItems">
+          <tr><th>日付<span class="req" style="margin-left:4px">必須</span></th><th>品目<span class="req" style="margin-left:4px">必須</span></th><th>単価<span class="req" style="margin-left:4px">必須</span></th><th>単位</th><th>数量<span class="req" style="margin-left:4px">必須</span></th><th>消費税</th><th>金額</th><th></th></tr>
+          ${payDraft.items.map((it,i)=>`<tr>
+            <td><input type="date" data-i="${i}" data-k="date" value="${esc(it.date)}" style="width:140px"></td>
+            <td><input data-i="${i}" data-k="item" value="${esc(it.item)}" style="min-width:160px"></td>
+            <td><input type="number" data-i="${i}" data-k="price" value="${it.price||""}" style="width:110px;text-align:right"></td>
+            <td><input data-i="${i}" data-k="unit" value="${esc(it.unit)}" style="width:60px"></td>
+            <td><input type="number" data-i="${i}" data-k="qty" value="${it.qty||""}" style="width:70px;text-align:right"></td>
+            <td><select data-i="${i}" data-k="tax" style="width:110px">${NOTICE_TAX_OPTS.map(t=>`<option ${it.tax===t?"selected":""}>${t}</option>`).join("")}</select></td>
+            <td class="num" id="payAmt${i}" style="padding:4px 8px">${num((Number(it.price)||0)*(Number(it.qty)||0))}</td>
+            <td><button class="icon-btn" onclick="payItemDel(${i})">🗑</button></td>
+          </tr>`).join("")||`<tr><td colspan="8" class="muted" style="text-align:center;padding:14px">明細がありません。「明細を新規登録」で追加してください。</td></tr>`}
+        </table>
+        </div>
+        <table class="sheet" style="max-width:360px;margin-left:auto;margin-top:12px">
+          <tr><td>小計</td><td class="num" id="pf_sub" style="padding:4px 8px;width:160px">${yen(c.sub)}</td></tr>
+          <tr><td>消費税</td><td class="num" id="pf_tax" style="padding:4px 8px">${yen(c.tax)}</td></tr>
+          <tr><td class="total">合計(税込み)</td><td class="total num" id="pf_total" style="padding:4px 8px">${yen(c.total)}</td></tr>
+        </table>
+      </div>
+      <div class="formfoot">
+        <button class="btn ghost" onclick="payDraft=null;payEditId=null;show('paynotices')">キャンセル</button>
+        <button class="btn" onclick="noticeSave()">${payEditId?"更新":"作成"}</button>
+      </div>
+    </div>`;
+  $("#nf_cust").addEventListener("change",e=>payDraft.custId=e.target.value);
+  $("#nf_date").addEventListener("change",e=>payDraft.payDate=e.target.value);
+  $("#nf_title").addEventListener("input",e=>payDraft.title=e.target.value);
+  /* 単価/数量/消費税/日付/品目/単位の変更では画面全体を再描画せず、
+     金額セルと合計欄だけを直接書き換える(数値入力の上下矢印クリックで画面が先頭へ飛ぶのを防ぐため) */
+  const payItemsChange=e=>{
+    const i=e.target.dataset.i;if(i==null)return;
+    const k=e.target.dataset.k;
+    payDraft.items[i][k]=(k==="price"||k==="qty")?Number(e.target.value)||0:e.target.value;
+    const amtCell=document.getElementById("payAmt"+i);
+    if(amtCell)amtCell.textContent=num((Number(payDraft.items[i].price)||0)*(Number(payDraft.items[i].qty)||0));
+    const c=noticeCalc(payDraft);
+    if($("#pf_sub"))$("#pf_sub").textContent=yen(c.sub);
+    if($("#pf_tax"))$("#pf_tax").textContent=yen(c.tax);
+    if($("#pf_total"))$("#pf_total").textContent=yen(c.total);
+  };
+  $("#payItems").addEventListener("input",payItemsChange);
+  $("#payItems").addEventListener("change",payItemsChange);
+};
+let noticeNoBump=0;
+function autoNoticeNo(){
+  const d=today().replaceAll("-","");
+  const n=db.paymentNotices.filter(x=>x.id.includes(d)).length+1+noticeNoBump;
+  return `SC-${d}-${String(n).padStart(3,"0")}`;
+}
+function payRegenNo(){
+  if(payEditId)return;
+  payDraft.custId=$("#nf_cust").value;payDraft.payDate=$("#nf_date").value;payDraft.title=$("#nf_title").value;
+  noticeNoBump++;
+  payDraft.id=autoNoticeNo();
+  refresh();
+}
+function payItemAdd(){payDraft.custId=$("#nf_cust").value;payDraft.payDate=$("#nf_date").value;payDraft.title=$("#nf_title").value;
+  payDraft.items.push({date:today(),item:"",price:0,unit:"式",qty:1,tax:"10%"});refresh();}
+function payItemDel(i){payDraft.items.splice(i,1);refresh();}
+function noticeSave(){
+  payDraft.custId=$("#nf_cust").value;payDraft.payDate=$("#nf_date").value;payDraft.title=$("#nf_title").value;
+  if(!payDraft.custId){alert("取引先名は必須です。");return;}
+  if(!payDraft.items.length){alert("明細を1件以上登録してください。");return;}
+  for(const it of payDraft.items){if(!it.date||!it.item||!it.price||!it.qty){alert("明細の必須項目(日付・品目・単価・数量)を入力してください。");return;}}
+  if(payEditId){
+    const i=db.paymentNotices.findIndex(n=>n.id===payEditId);
+    db.paymentNotices[i]=payDraft;
+  }else{
+    db.paymentNotices.push(payDraft);
+  }
+  payDraft._saved=true;save();payEditId=null;payDraft=null;show("paynotices");
+}
+function noticeHtml(n){
+  const cust=db.customers.find(x=>x.id===n.custId)||{name:"(削除済み)",addr:""};
+  const co=db.settings.company, c=noticeCalc(n);
+  return `
+  <div class="invoice">
+    <h1>支払通知書</h1>
+    <div class="inv-head">
+      <div>
+        <div style="font-size:15px;font-weight:700;border-bottom:1px solid #333;padding-bottom:4px;margin-bottom:6px">${esc(cust.name)} 御中</div>
+        <div class="muted">${esc(custFullAddr(cust))}</div>
+        <div style="margin-top:14px">下記のとおりお支払いいたします。</div>
+        <div class="inv-total">お支払金額(税込) ${yen(c.total)}</div>
+        <div style="margin-top:8px;font-size:13px">お支払日:${dotDate(n.payDate)}</div>
+      </div>
+      <div style="text-align:right;font-size:12px">
+        <div>通知番号:${esc(n.id)}</div>
+        <div>作成日:${dotDate(n.created)}</div>
+        <div style="margin-top:10px;font-weight:700;font-size:14px">${esc(co.name)}</div>
+        <div>〒${esc(co.zip)} ${esc(co.addr)}</div>
+        <div>TEL:${esc(co.tel)}</div>
+        <div>登録番号:${esc(co.regNo)}</div>
+      </div>
+    </div>
+    ${n.title?`<div style="font-size:13px;margin-bottom:6px">件名:${esc(n.title)}</div>`:""}
+    <table class="inv">
+      <tr><th>日付</th><th style="width:40%">品目</th><th class="num">単価</th><th>単位</th><th class="num">数量</th><th>消費税</th><th class="num">金額</th></tr>
+      ${n.items.map(it=>`<tr>
+        <td>${dotDate(it.date)}</td><td>${esc(it.item)}</td>
+        <td class="num">${num(it.price)}</td><td style="text-align:center">${esc(it.unit)}</td>
+        <td class="num">${num(it.qty)}</td><td style="text-align:center">${esc(it.tax)}</td>
+        <td class="num">${num((Number(it.price)||0)*(Number(it.qty)||0))}</td></tr>`).join("")}
+      <tr><td colspan="6" style="text-align:right">小計</td><td class="num">${yen(c.sub)}</td></tr>
+      <tr><td colspan="6" style="text-align:right">消費税</td><td class="num">${yen(c.tax)}</td></tr>
+      <tr><td colspan="6" style="text-align:right;font-weight:700">合計(税込み)</td><td class="num" style="font-weight:700">${yen(c.total)}</td></tr>
+    </table>
+    <div style="margin-top:16px;font-size:12px"><b>お振込先(入金口座)</b>:${esc(co.bank)}</div>
+  </div>`;
+}
+function noticeView(id){
+  const n=db.paymentNotices.find(x=>x.id===id);
+  openModal(`${noticeHtml(n)}
+    <div class="formfoot no-print" style="justify-content:center">
+      <button class="btn ghost" onclick="closeModal()">閉じる</button>
+      <button class="btn accent" onclick="noticePrint('${id}')">印刷 / PDF保存</button>
+    </div>`);
+}
+function noticePrint(id){
+  const n=db.paymentNotices.find(x=>x.id===id);
+  $("#invoicePrintArea").innerHTML=noticeHtml(n);
+  document.body.classList.add("printing-invoice");
+  window.print();
+  document.body.classList.remove("printing-invoice");
+}
+function bankEdit(){
+  openModal(`
+    <h3>預金口座情報の編集</h3>
+    <div class="field"><label>入金口座(銀行名・支店名・種別・口座番号・名義)</label>
+      <input id="bk_val" value="${esc(db.settings.company.bank)}" placeholder="〇〇銀行 △△支店 普通 1234567 カ)〇〇"></div>
+    <div class="formfoot">
+      <button class="btn ghost" onclick="closeModal()">キャンセル</button>
+      <button class="btn" onclick="db.settings.company.bank=$('#bk_val').value;save();closeModal();show('payform')">保存する</button>
+    </div>`);
+}
+
+function parseCsv(text){
+  const out=[];let row=[],cur="",q=false;
+  text=String(text).replace(/^﻿/,"");
+  for(let i=0;i<text.length;i++){
+    const ch=text[i];
+    if(q){
+      if(ch==='"'){if(text[i+1]==='"'){cur+='"';i++;}else q=false;}
+      else cur+=ch;
+    }else{
+      if(ch==='"')q=true;
+      else if(ch===","){row.push(cur);cur="";}
+      else if(ch==="\n"||ch==="\r"){if(ch==="\r"&&text[i+1]==="\n")i++;row.push(cur);out.push(row);row=[];cur="";}
+      else cur+=ch;
+    }
+  }
+  if(cur!==""||row.length){row.push(cur);out.push(row);}
+  return out;
+}
+/* ================= clock ================= */
+function tickClock(){
+  const el=document.getElementById("clockTime");if(!el)return;
+  const d=new Date(),p=x=>String(x).padStart(2,"0");
+  el.textContent=`${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+  document.getElementById("clockDate").textContent=`${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日(${"日月火水木金土"[d.getDay()]})`;
+}
+setInterval(tickClock,1000);tickClock();
+
+/* ================= init ================= */
+loadDb();
+$("#loginPw").addEventListener("keydown",e=>{if(e.key==="Enter")doLogin();});
+if(sessionStorage.getItem("bf_login")==="1"){showApp();}
+/* demo deep-link: #auto&page=sales&modal=cust */
+(function(){
+  const h=location.hash.slice(1);
+  if(!h||!/(^|&)auto(&|=|$)/.test(h))return;
+  const m={};h.split("&").forEach(x=>{const[k,v]=x.split("=");m[k]=v||"";});
+  sessionStorage.setItem("bf_login","1");showApp();
+  if(m.page&&PAGES[m.page])show(m.page);
+  if(m.modal==="cust")custForm();
+  else if(m.modal==="sale")saleForm();
+  else if(m.modal==="pur")purForm();
+  else if(m.modal==="invoice")invoiceView(m.sale?decodeURIComponent(m.sale):db.sales[0].id);
+  else if(m.modal==="notice")noticeView(db.paymentNotices[0].id);
+})();

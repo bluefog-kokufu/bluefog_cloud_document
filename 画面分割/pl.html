@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bluefog Cloud - 損益計算書</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app" style="display:block">
+  <header class="topbar">
+    <div class="brand"><span class="mark"></span>Bluefog Cloud</div>
+    <div class="userbox">
+      <a class="manual-link" href="manual.html" target="_blank" title="ユーザー利用マニュアルを開く">📖 操作マニュアル</a>
+      <span id="userLabel">ユーザー企業 ご担当者(user@user.com)</span>
+      <button class="btn ghost small" onclick="logout()">ログアウト</button>
+    </div>
+  </header>
+  <div class="layout">
+    <nav class="side" id="sideNav">
+
+      <div class="clock"><div class="t" id="clockTime">11:54:18</div><div class="d" id="clockDate">2026年8月6日(木)</div></div>
+      <div class="navttl">MENU</div>
+      <a data-page="home" class="">ホーム</a>
+      <a data-page="customers" class="">顧客管理</a>
+      <a data-page="sales" class="">受注取引一覧</a>
+      <a data-page="purchases" class="">発注取引一覧(アップロード)</a>
+      <div class="navttl">支払通知書管理</div>
+      <a data-page="paynotices" class="">支払通知書一覧</a>
+      <a data-page="payform" class="">支払通知書作成</a>
+      <div class="navttl">会計帳簿</div>
+      <a data-page="ledger" class="">総勘定元帳</a>
+      <a data-page="bs" class="">貸借対照表</a>
+      <a data-page="pl" class="active">損益計算書</a>
+      <a data-page="cf">キャッシュフロー計算書</a>
+      <div class="navttl">設定</div>
+      <a data-page="settings">会計・消費税設定</a>
+      <a data-page="profile">プロフィール</a>
+    
+    </nav>
+    <main id="page">
+
+    <div class="crumb"><a onclick="show('home')">ホーム</a> / 損益計算書</div>
+    <h2 class="pagettl">損益計算書</h2>
+    <div class="panel">
+      <div class="sheet-head">
+        <button class="btn ghost small" onclick="plAdd()">+ 1行追加</button>
+        <span class="ttl" style="margin:0 auto">損益計算書</span>
+        <span class="unit">(単位:円)</span>
+      </div>
+      <div class="sheet-head">自: <input type="date" id="pl_from" value="2026-01-01" style="width:150px">
+        至: <input type="date" id="pl_to" value="2026-12-31" style="width:150px"></div>
+      <table class="sheet" id="plTable">
+        <tbody><tr><th>科目</th><th style="width:120px">区分</th><th style="width:200px">金額</th></tr>
+        <tr>
+          <td><input data-i="0" data-k="name" value="売上高"></td>
+          <td><select data-i="0" data-k="type"><option selected="">収益</option><option>費用</option></select></td>
+          <td><input data-i="0" data-k="v" type="number" value="12800000" style="text-align:right"></td>
+        </tr><tr>
+          <td><input data-i="1" data-k="name" value="売上原価"></td>
+          <td><select data-i="1" data-k="type"><option>収益</option><option selected="">費用</option></select></td>
+          <td><input data-i="1" data-k="v" type="number" value="6400000" style="text-align:right"></td>
+        </tr><tr>
+          <td><input data-i="2" data-k="name" value="販売費及び一般管理費"></td>
+          <td><select data-i="2" data-k="type"><option>収益</option><option selected="">費用</option></select></td>
+          <td><input data-i="2" data-k="v" type="number" value="3200000" style="text-align:right"></td>
+        </tr>
+        <tr><td class="total" colspan="2">収益合計</td><td class="total num" style="padding:4px 8px">12,800,000</td></tr>
+        <tr><td class="total" colspan="2">費用合計</td><td class="total num" style="padding:4px 8px">9,600,000</td></tr>
+        <tr><td class="total" colspan="2">当期純利益</td><td class="total num" style="padding:4px 8px">3,200,000</td></tr>
+      </tbody></table>
+      <div class="formfoot">
+        <button class="btn" onclick="db.pl.from=$('#pl_from').value;db.pl.to=$('#pl_to').value;save();alert('保存しました。')">保存する</button>
+        <button class="btn ghost" onclick="plCsv()">CSV保存</button>
+      </div>
+    </div>
+    </main>
+  </div>
+</div>
+
+<div class="modal-bg" id="modalBg"><div class="modal" id="modalBox"></div></div>
+<div id="invoicePrintArea"></div>
+<script>window.INITIAL_PAGE="pl";sessionStorage.setItem("bf_login","1");</script>
+<script src="js/app.txt"></script>
+</body>
+</html>

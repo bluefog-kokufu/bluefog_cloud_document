@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bluefog Cloud - 総勘定元帳</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app" style="display:block">
+  <header class="topbar">
+    <div class="brand"><span class="mark"></span>Bluefog Cloud</div>
+    <div class="userbox">
+      <a class="manual-link" href="manual.html" target="_blank" title="ユーザー利用マニュアルを開く">📖 操作マニュアル</a>
+      <span id="userLabel">ユーザー企業 ご担当者(user@user.com)</span>
+      <button class="btn ghost small" onclick="logout()">ログアウト</button>
+    </div>
+  </header>
+  <div class="layout">
+    <nav class="side" id="sideNav">
+
+      <div class="clock"><div class="t" id="clockTime">11:54:18</div><div class="d" id="clockDate">2026年8月6日(木)</div></div>
+      <div class="navttl">MENU</div>
+      <a data-page="home" class="">ホーム</a>
+      <a data-page="customers" class="">顧客管理</a>
+      <a data-page="sales" class="">受注取引一覧</a>
+      <a data-page="purchases" class="">発注取引一覧(アップロード)</a>
+      <div class="navttl">支払通知書管理</div>
+      <a data-page="paynotices" class="">支払通知書一覧</a>
+      <a data-page="payform" class="">支払通知書作成</a>
+      <div class="navttl">会計帳簿</div>
+      <a data-page="ledger" class="active">総勘定元帳</a>
+      <a data-page="bs">貸借対照表</a>
+      <a data-page="pl">損益計算書</a>
+      <a data-page="cf">キャッシュフロー計算書</a>
+      <div class="navttl">設定</div>
+      <a data-page="settings">会計・消費税設定</a>
+      <a data-page="profile">プロフィール</a>
+    
+    </nav>
+    <main id="page">
+
+    <div class="crumb"><a onclick="show('home')">ホーム</a> / 総勘定元帳</div>
+    <h2 class="pagettl">総勘定元帳</h2>
+    <div class="lgLayout">
+      <div class="lgSide">
+        <button class="btn ghost small" onclick="ledgerAdd()">+ 1行追加</button>
+        <button class="btn blue small" onclick="$('#ledgerCsvFile').click()">⬆ CSVインポート</button>
+        <input type="file" id="ledgerCsvFile" accept=".csv" style="display:none">
+      </div>
+      <div class="panel" style="flex:1">
+        <div class="tabbar">
+          <a class="active" onclick="ledgerTab='jnl';refresh()">仕訳帳</a>
+          <a class="" onclick="ledgerTab='lg';refresh()">総勘定元帳</a>
+        </div>
+        
+    <div class="sheet-head">日付: <input type="date" id="lg_date" value="2026-05-02" style="width:160px"></div>
+    <div style="overflow-x:auto">
+    <datalist id="acctList"><option value="現金"></option><option value="普通預金"></option><option value="売掛金"></option><option value="買掛金"></option><option value="商品"></option><option value="備品"></option><option value="借入金"></option><option value="資本金"></option><option value="売上高"></option><option value="仕入高"></option><option value="給料手当"></option><option value="地代家賃"></option><option value="通信費"></option><option value="消耗品費"></option><option value="雑費"></option></datalist>
+    <table class="sheet" id="lgTable">
+      <tbody><tr><th>伝票No.</th><th>年</th><th>月</th><th>日</th><th>借方勘定科目</th><th>金額</th><th>貸方勘定科目</th><th>金額</th><th>勘定科目</th><th>摘要</th><th>仕丁</th><th>借方</th><th>貸方</th><th>残高</th></tr>
+      <tr>
+        <td><input data-i="0" data-k="no" value="test1" style="width:80px"></td>
+        <td><input data-i="0" data-k="year" value="2026" style="width:60px;text-align:center"></td>
+        <td><input data-i="0" data-k="m" value="5" style="width:44px;text-align:center"></td>
+        <td><input data-i="0" data-k="d" value="11" style="width:44px;text-align:center"></td>
+        <td><input data-i="0" data-k="drAcct" list="acctList" value="売掛金" style="width:110px"></td>
+        <td><input data-i="0" data-k="drAmt" type="number" class="num" value="55000" style="width:100px;text-align:right"></td>
+        <td><input data-i="0" data-k="crAcct" list="acctList" value="売上高" style="width:110px"></td>
+        <td><input data-i="0" data-k="crAmt" type="number" class="num" value="55000" style="width:100px;text-align:right"></td>
+        <td class="muted" style="padding:4px 8px">売掛金／売上高</td>
+        <td><input data-i="0" data-k="note" value="商品売上" style="width:140px"></td>
+        <td><input data-i="0" data-k="page" value="1" style="width:44px;text-align:center"></td>
+        <td class="num muted" style="padding:4px 8px">55,000</td>
+        <td class="num muted" style="padding:4px 8px">55,000</td>
+        <td class="num muted" style="padding:4px 8px"></td>
+      </tr>
+      <tr><td class="total" colspan="5">合計</td>
+        <td class="total num" style="padding:4px 8px">55,000</td>
+        <td class="total"></td>
+        <td class="total num" style="padding:4px 8px">55,000</td>
+        <td class="total" colspan="3"></td>
+        <td class="total num" style="padding:4px 8px">55,000</td>
+        <td class="total num" style="padding:4px 8px">55,000</td>
+        <td class="total"></td></tr>
+    </tbody></table>
+    </div>
+    <div class="formfoot">
+      <button class="btn" onclick="ledgerSave(true)">保存する</button>
+      <button class="btn ghost" onclick="ledgerCsvExport()">CSV保存</button>
+    </div>
+      </div>
+    </div>
+    </main>
+  </div>
+</div>
+
+<div class="modal-bg" id="modalBg"><div class="modal" id="modalBox"></div></div>
+<div id="invoicePrintArea"></div>
+<script>window.INITIAL_PAGE="ledger";sessionStorage.setItem("bf_login","1");</script>
+<script src="js/app.txt"></script>
+</body>
+</html>

@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bluefog Cloud - 顧客管理</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app" style="display:block">
+  <header class="topbar">
+    <div class="brand"><span class="mark"></span>Bluefog Cloud</div>
+    <div class="userbox">
+      <a class="manual-link" href="manual.html" target="_blank" title="ユーザー利用マニュアルを開く">📖 操作マニュアル</a>
+      <span id="userLabel">ユーザー企業 ご担当者(user@user.com)</span>
+      <button class="btn ghost small" onclick="logout()">ログアウト</button>
+    </div>
+  </header>
+  <div class="layout">
+    <nav class="side" id="sideNav">
+
+      <div class="clock"><div class="t" id="clockTime">11:54:18</div><div class="d" id="clockDate">2026年8月6日(木)</div></div>
+      <div class="navttl">MENU</div>
+      <a data-page="home" class="">ホーム</a>
+      <a data-page="customers" class="active">顧客管理</a>
+      <a data-page="sales">受注取引一覧</a>
+      <a data-page="purchases">発注取引一覧(アップロード)</a>
+      <div class="navttl">支払通知書管理</div>
+      <a data-page="paynotices">支払通知書一覧</a>
+      <a data-page="payform">支払通知書作成</a>
+      <div class="navttl">会計帳簿</div>
+      <a data-page="ledger">総勘定元帳</a>
+      <a data-page="bs">貸借対照表</a>
+      <a data-page="pl">損益計算書</a>
+      <a data-page="cf">キャッシュフロー計算書</a>
+      <div class="navttl">設定</div>
+      <a data-page="settings">会計・消費税設定</a>
+      <a data-page="profile">プロフィール</a>
+    
+    </nav>
+    <main id="page">
+
+    <div class="crumb"><a onclick="show('home')">ホーム</a> / 顧客一覧</div>
+    <h2 class="pagettl">顧客一覧</h2>
+    <div class="panel">
+      <div class="toolbar">
+        <input type="text" id="custQ" placeholder="会社名・担当者・メール等で検索" value="">
+        <button class="btn small" onclick="custQ=$('#custQ').value;show('customers')">検索</button>
+        <span style="flex:1"></span>
+        <button class="btn ghost small" onclick="custForm()">顧客作成</button>
+      </div>
+      <div class="csvbar">
+    <button class="btn yellow small" onclick="custCsvExport()">⬇ データのエクスポート(CSV)</button>
+    <button class="btn blue small" onclick="$('#custCsvFile').click()">⬆ CSVインポート</button>
+    <button class="btn green small" onclick="custCsvTemplate()">⬇ CSVテンプレート</button>
+    <input type="file" id="custCsvFile" accept=".csv" style="display:none">
+  </div>
+      <div class="card" style="overflow-x:auto">
+        <table class="list">
+          <tbody><tr><th>No</th><th>会社名</th><th>電話番号</th><th>担当者名</th><th>メールアドレス</th><th>操作</th></tr>
+          <tr>
+            <td class="muted" style="max-width:170px;overflow:hidden;text-overflow:ellipsis">c1</td>
+            <td><a onclick="custForm('c1')">test1株式会社</a></td>
+            <td>03-0000-0000</td><td>山田 太郎</td><td>info@test1.co.jp</td>
+            <td><button class="icon-btn" title="編集" onclick="custForm('c1')">✎</button>
+                <button class="icon-btn" title="削除" onclick="custDel('c1')">🗑</button></td>
+          </tr><tr>
+            <td class="muted" style="max-width:170px;overflow:hidden;text-overflow:ellipsis">c2</td>
+            <td><a onclick="custForm('c2')">サンプル商事株式会社</a></td>
+            <td>06-0000-0000</td><td>佐藤 花子</td><td>sato@sample.co.jp</td>
+            <td><button class="icon-btn" title="編集" onclick="custForm('c2')">✎</button>
+                <button class="icon-btn" title="削除" onclick="custDel('c2')">🗑</button></td>
+          </tr>
+        </tbody></table>
+        <div class="pager"><button>&lt;</button><button class="cur">1</button><button>&gt;</button></div>
+      </div>
+    </div>
+    </main>
+  </div>
+</div>
+
+<div class="modal-bg" id="modalBg"><div class="modal" id="modalBox"></div></div>
+<div id="invoicePrintArea"></div>
+<script>window.INITIAL_PAGE="customers";sessionStorage.setItem("bf_login","1");</script>
+<script src="js/app.txt"></script>
+</body>
+</html>

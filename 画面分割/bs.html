@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bluefog Cloud - 貸借対照表</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app" style="display:block">
+  <header class="topbar">
+    <div class="brand"><span class="mark"></span>Bluefog Cloud</div>
+    <div class="userbox">
+      <a class="manual-link" href="manual.html" target="_blank" title="ユーザー利用マニュアルを開く">📖 操作マニュアル</a>
+      <span id="userLabel">ユーザー企業 ご担当者(user@user.com)</span>
+      <button class="btn ghost small" onclick="logout()">ログアウト</button>
+    </div>
+  </header>
+  <div class="layout">
+    <nav class="side" id="sideNav">
+
+      <div class="clock"><div class="t" id="clockTime">11:54:18</div><div class="d" id="clockDate">2026年8月6日(木)</div></div>
+      <div class="navttl">MENU</div>
+      <a data-page="home" class="">ホーム</a>
+      <a data-page="customers" class="">顧客管理</a>
+      <a data-page="sales" class="">受注取引一覧</a>
+      <a data-page="purchases" class="">発注取引一覧(アップロード)</a>
+      <div class="navttl">支払通知書管理</div>
+      <a data-page="paynotices" class="">支払通知書一覧</a>
+      <a data-page="payform" class="">支払通知書作成</a>
+      <div class="navttl">会計帳簿</div>
+      <a data-page="ledger" class="">総勘定元帳</a>
+      <a data-page="bs" class="active">貸借対照表</a>
+      <a data-page="pl">損益計算書</a>
+      <a data-page="cf">キャッシュフロー計算書</a>
+      <div class="navttl">設定</div>
+      <a data-page="settings">会計・消費税設定</a>
+      <a data-page="profile">プロフィール</a>
+    
+    </nav>
+    <main id="page">
+
+    <div class="crumb"><a onclick="show('home')">ホーム</a> / 貸借対照表</div>
+    <h2 class="pagettl">貸借対照表</h2>
+    <div class="panel">
+      <div class="sheet-head">
+        <div>
+          <button class="btn ghost small" onclick="bsAdd('assets')">+ 資産 1行追加</button>
+          <button class="btn ghost small" onclick="bsAdd('liabs')">+ 負債 1行追加</button>
+          <button class="btn ghost small" onclick="bsAdd('equity')">+ 純資産 1行追加</button>
+        </div>
+        <span class="ttl" style="margin:0 auto">貸借対照表</span>
+        <span class="unit">(単位:円)</span>
+      </div>
+      <div class="sheet-head">日付: <input type="date" id="bs_date" value="2026-08-16" style="width:160px"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px" id="bsWrap">
+        <table class="sheet" id="bsA">
+          <tbody><tr><th colspan="2">資産の部</th></tr>
+          <tr>
+    <td><input data-p="assets" data-i="0" data-k="name" value="現金及び預金"></td>
+    <td style="width:180px"><input data-p="assets" data-i="0" data-k="v" type="number" value="3550000" style="text-align:right"></td>
+  </tr><tr>
+    <td><input data-p="assets" data-i="1" data-k="name" value="売掛金"></td>
+    <td style="width:180px"><input data-p="assets" data-i="1" data-k="v" type="number" value="1450000" style="text-align:right"></td>
+  </tr><tr>
+    <td><input data-p="assets" data-i="2" data-k="name" value="固定資産"></td>
+    <td style="width:180px"><input data-p="assets" data-i="2" data-k="v" type="number" value="5500000" style="text-align:right"></td>
+  </tr>
+          <tr><td class="total">資産の部合計</td><td class="total num" style="padding:4px 8px">10,500,000</td></tr>
+        </tbody></table>
+        <table class="sheet" id="bsL">
+          <tbody><tr><th colspan="2">負債の部</th></tr>
+          <tr>
+    <td><input data-p="liabs" data-i="0" data-k="name" value="買掛金"></td>
+    <td style="width:180px"><input data-p="liabs" data-i="0" data-k="v" type="number" value="980000" style="text-align:right"></td>
+  </tr><tr>
+    <td><input data-p="liabs" data-i="1" data-k="name" value="長期借入金"></td>
+    <td style="width:180px"><input data-p="liabs" data-i="1" data-k="v" type="number" value="3200000" style="text-align:right"></td>
+  </tr>
+          <tr><td class="total">負債の部合計</td><td class="total num" style="padding:4px 8px">4,180,000</td></tr>
+          <tr><th colspan="2">純資産の部</th></tr>
+          <tr>
+    <td><input data-p="equity" data-i="0" data-k="name" value="資本金"></td>
+    <td style="width:180px"><input data-p="equity" data-i="0" data-k="v" type="number" value="5000000" style="text-align:right"></td>
+  </tr><tr>
+    <td><input data-p="equity" data-i="1" data-k="name" value="利益剰余金"></td>
+    <td style="width:180px"><input data-p="equity" data-i="1" data-k="v" type="number" value="1320000" style="text-align:right"></td>
+  </tr>
+          <tr><td class="total">純資産の部合計</td><td class="total num" style="padding:4px 8px">6,320,000</td></tr>
+          <tr><td class="total">負債・純資産の部合計</td><td class="total num" style="padding:4px 8px">10,500,000</td></tr>
+        </tbody></table>
+      </div>
+      <div style="color:var(--ok);font-size:12px;margin-top:8px">✓ 貸借一致しています。</div>
+      <div class="formfoot">
+        <button class="btn" onclick="db.bs.date=$('#bs_date').value;save();alert('保存しました。')">保存する</button>
+        <button class="btn ghost" onclick="bsCsv()">CSV保存</button>
+      </div>
+    </div>
+    </main>
+  </div>
+</div>
+
+<div class="modal-bg" id="modalBg"><div class="modal" id="modalBox"></div></div>
+<div id="invoicePrintArea"></div>
+<script>window.INITIAL_PAGE="bs";sessionStorage.setItem("bf_login","1");</script>
+<script src="js/app.txt"></script>
+</body>
+</html>
