@@ -4,3 +4,24 @@
     ユーザーアカウント
     メールアドレス：user@user.com
     パスワード：password
+
+・ローカル開発環境
+    ・ファイルアップロードの仕様
+        アップロードした書類ファイルとCSVインポートファイルでは、保存の扱いが異なります。
+
+書類ファイル(見積書・請求書・領収書・契約書)
+
+保存先: コンテナ内の storage/app/private/purchases/{取引ID}/{書類種別}_{タイムスタンプ}.{拡張子}
+
+例: storage/app/private/purchases/lly2rovi1/quote_20260807023319.png
+
+- Laravelのlocalディスク(config/filesystems.phpでstorage_path('app/private')が実体)を使っています。これはpublicディスクと違い、storage:linkで公開URLに晒される場所ではない非公開ストレージです。
+- 発注書類は電子帳簿保存法の対象になり得るため、誰でもURLを知れば見られる公開領域には置かず、ログイン済みユーザーのみアクセスできる/purchase/{id}/file/{key}ルート経由でのみダウンロードできるようにしています(app/Services/PurchaseService.phpのfileResponse())。
+- ファイル名・元のファイル名・アップロード日時などのメタ情報は、purchasesテーブルのfilesカラム(JSON)にレコードごとに記録しています(app/Http/Controllers/Admin/PurchaseController.php→app/Services/PurchaseService.phpのstoreFiles())。
+- 同じ書類種別を再アップロードすると、古いファイルは削除して新しいファイルに置き換えます。取引を削除するとpurchases/{取引ID}ディレクトリごと削除されます。
+
+CSVインポートファイル
+
+保存先: どこにも永続保存していません。
+
+PurchaseController::import()では、アップロードされたCSVをPHPが一時的に保持する場所($request->file('csv_file')->getRealPath()、コンテナ内/tmp配下)から直接読み込んでpurchasesテーブルに行を登録するだけで、CSVファイル自体はリクエスト処理後にPHPが自動的に破棄します。取引書類(PDF等)と違い、CSVの実ファイルは残らない仕様です。
