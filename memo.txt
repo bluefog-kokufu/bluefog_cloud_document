@@ -1,0 +1,8 @@
+・管理画面
+    http://admin.localhost:8080/login
+    
+    メールアドレス
+    staff@bluefog-solution.com
+    
+    パスワード
+    password
